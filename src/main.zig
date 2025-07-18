@@ -134,22 +134,11 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
         .max_y = layout_helper.bounds.max_y,
     };
 
-    var black: [800 * 4]u8 align(4) = @splat(0xff);
-    buffer.draw(.xywh(400, 100, 500, 1), black[0..]);
-    const black_ptr: *[200]u32 = @ptrCast(&black);
-    for (tl.glyphs, 0..) |g, i| {
-        black_ptr.* = switch (i % 3) {
-            0 => @splat(0xff000000 | (@as(u32, g.char) << 0)),
-            1 => @splat(0xff000000 | (@as(u32, g.char) << 8)),
-            2 => @splat(0xff000000 | (@as(u32, g.char) << 16)),
-            else => unreachable,
-        };
-        //const height = g.pixel_y2 - g.pixel_y1;
-        //const y_base: isize = 0 - height - g.pixel_y1;
+    for (tl.glyphs) |g| {
         const glyph = try ttf.glyphForChar(alloc, g.char) orelse continue;
 
         const canvas, _ = try glyph.renderSize(alloc, 14, ttf.head.units_per_em);
-        buffer.drawFont(.xywh(
+        buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(400 + g.pixel_x1),
             @intCast(100 - g.pixel_y1),
             @intCast(canvas.width),
@@ -159,17 +148,18 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
 }
 
 fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
-    for (0..colors.raw.len / 4) |i| {
-        const ratio: usize = @intCast(i * 100 / (colors.raw.len / 4));
-        const ratio2: usize = @intCast((i % size) * 100 / size);
-        const a: u8 = 0xff;
-        const r: u8 = @truncate(0xff * ratio2 / 100);
-        const g: u8 = @truncate(0xff * ratio / 100);
-        const b: u8 = 0xff - r;
-        colors.raw[i * 4 ..][0..4].* = .{ b, g, r, a };
+    for (0..size) |x| for (0..size) |y| {
+        const r_x: usize = @intCast(x * 0xff / size);
+        const r_y: usize = @intCast(y * 0xff / size);
+        const r: u8 = @intCast(r_x & 0xfe);
+        const g: u8 = @intCast(r_y & 0xfe);
+        const b: u8 = @intCast(0xff - r);
+        const c = Buffer.ARGB.rgb(r, g, b);
+        colors.draw(.xywh(x, y, 1, 1), &[1]u32{c.int()});
         const b2: u8 = 0xff - g;
-        buffer.raw[i * 4 ..][0..4].* = .{ r, b2, g, a };
-    }
+        const c2 = Buffer.ARGB.rgb(r, g, b2);
+        buffer.draw(.xywh(x, y, 1, 1), &[1]u32{@intFromEnum(c2)});
+    };
 }
 
 test {
