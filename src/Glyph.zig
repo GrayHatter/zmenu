@@ -25,8 +25,8 @@ pub const SimpleFlag = packed struct(u8) {
         repeat,
     };
 
-    pub fn variant(f: SimpleFlag, xy: enum { x, y }) Variant {
-        return switch (xy) {
+    pub fn variant(f: SimpleFlag, comptime xy: enum { x, y }) Variant {
+        return switch (comptime xy) {
             .x => switch (f.x_short_vector) {
                 true => switch (f.x_is_same_or_positive_x_short_vector) {
                     true => .short_pos,
@@ -37,7 +37,6 @@ pub const SimpleFlag = packed struct(u8) {
                     false => .long,
                 },
             },
-
             .y => switch (f.y_short_vector) {
                 true => switch (f.y_is_same_or_positive_y_short_vector) {
                     true => .short_pos,
