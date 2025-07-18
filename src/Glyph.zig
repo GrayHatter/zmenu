@@ -126,12 +126,102 @@ pub const Simple = struct {
 
 pub const Compound = struct {
     common: Header,
-    end_pts_of_contours: []u16,
-    instruction_length: u16,
-    instructions: []u8,
-    flags: []SimpleFlag,
-    x_coordinates: []i16,
-    y_coordinates: []i16,
+    data: []const u8,
+
+    //Compound glyphs are glyphs made up of two or more component glyphs. A
+    //compound glyph description begins like a simple glyph description with
+    //four words describing the bounding box. It is followed by n component
+    //glyph parts. Each component glyph parts consists of a flag entry, two
+    //offset entries and from one to four transformation entries.
+
+    //The format for describing each component glyph in a compound glyph is
+    //documented in Table 17. The meanings associated with the flags in the
+    //first entry are given in Table 18.
+
+    flags: u16,
+    glyphIndex: u16,
+    arg1: union { int16: i16, uint16: u16, int8: i8, uint8: u8 },
+    arg2: union { int16: i16, uint16: u16, int8: i8, uint8: u8 },
+
+    pub const Flags = packed struct(u16) {
+        args_are_words: bool,
+        args_are_xy: bool,
+        round_xy_to_grid: bool,
+        single_scale: bool,
+        _obsolete: bool,
+        more_components: bool,
+        x_and_y_scales: bool,
+        two_by_two_scales: bool,
+        we_have_instructions: bool,
+        use_my_metrics: bool,
+        overlap_compound: bool,
+        _padding: u5,
+    };
+
+    pub const Transform = union(enum) {
+        scale: u16, // scale (same for x and y)
+        xy_scale: struct {
+            x: u16,
+            y: u16,
+        },
+        xy_twoby: struct {
+            x: u16,
+            z01: u16,
+            z10: u16,
+            y: u16,
+        },
+    };
+
+    fn getED(f: Flags) struct { f16, f16 } {
+        const _f8 = 0;
+        const _f16 = 0;
+        const idx_8 = 0;
+        const idx_16 = 0;
+        switch (f.args_are_xy) {
+            true => return if (f.args_are_words)
+                .{ _f16, _f16 }
+            else
+                .{ _f8, _f8 },
+            false => return if (f.args_are_words)
+                .{ idx_16, idx_16 }
+            else
+                .{ idx_8, idx_8 },
+        }
+    }
+
+    fn getABCD(f: Flags) struct { u16, u16, u16, u16 } {
+        const _u16 = 0;
+        if (!f.single_scale) return .{ 1, 0, 0, 1 };
+
+        if (f.single_scale) {
+            std.debug.assert(!f.x_and_y_scales);
+            std.debug.assert(!f.two_by_two_scales);
+            return .{ _u16, 0, 0, _u16 };
+        }
+        if (f.x_and_y_scales) {
+            std.debug.assert(!f.single_scale);
+            std.debug.assert(!f.two_by_two_scales);
+            return .{ _u16, 0, 0, _u16 };
+        }
+        if (f.two_by_two_scales) {
+            std.debug.assert(!f.single_scale);
+            std.debug.assert(!f.two_by_two_scales);
+            return .{ _u16, _u16, _u16, _u16 };
+        }
+        return undefined;
+    }
+
+    fn transformation(a: i16, b: i16, c: i16, d: i16, e: i16) void {
+        const m = @max(@abs(a), @abs(b)) * if (@abs(@abs(a) - @abs(c)) <= 33 / 65536) 2 else 1;
+        const n = @max(@abs(c), @abs(d)) * if (@abs(@abs(b) - @abs(d)) <= 33 / 65536) 2 else 1;
+
+        const x = 0;
+        const y = 0;
+        const x2 = m * ((a / m) * x + (c / m) * y + e);
+        const y2 = m * ((b / n) * x + (d / n) * y + e);
+        _ = x2;
+        _ = y2;
+    }
 };
 
 pub const BBox = struct {
@@ -269,11 +359,71 @@ pub const Table = struct {
     }
 
     pub fn compound(self: Table, alloc: Allocator, start: usize, end: usize) !Compound {
-        _ = self;
-        _ = alloc;
-        _ = start;
-        _ = end;
-        unreachable;
+        var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
+        const common = runtime_parser.readVal(Header);
+
+        //std.debug.print("common {}\n", .{common});
+
+        const end_pts_of_contours = try runtime_parser.readArray(u16, alloc, @intCast(common.number_of_contours));
+        const instruction_length = runtime_parser.readVal(u16);
+        //const instructions = try runtime_parser.readArray(u8, alloc, instruction_length);
+        for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
+        const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
+
+        const flags = try alloc.alloc(SimpleFlag, num_contours);
+        const x_coords = try alloc.alloc(i16, num_contours);
+        const y_coords = try alloc.alloc(i16, num_contours);
+
+        const fl_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+        var i: usize = 0;
+        while (i < num_contours) {
+            defer i += 1;
+            const flag: SimpleFlag = @bitCast(runtime_parser.readVal(u8));
+            std.debug.assert(flag.reserved == false);
+
+            flags[i] = flag;
+
+            if (flag.repeat_flag) {
+                const num_repetitions = runtime_parser.readVal(u8);
+                @memset(flags[i + 1 .. i + 1 + num_repetitions], flag);
+                i += num_repetitions;
+            }
+        }
+
+        const xc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+        for (flags, x_coords) |flag, *xc| {
+            switch (flag.variant(.x)) {
+                .short_pos => xc.* = runtime_parser.readVal(u8),
+                .short_neg => xc.* = -@as(i16, runtime_parser.readVal(u8)),
+                .long => xc.* = runtime_parser.readVal(i16),
+                .repeat => xc.* = 0,
+            }
+        }
+
+        const yc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+        for (flags, y_coords) |flag, *yc| {
+            switch (flag.variant(.y)) {
+                .short_pos => yc.* = runtime_parser.readVal(u8),
+                .short_neg => yc.* = -@as(i16, runtime_parser.readVal(u8)),
+                .long => yc.* = runtime_parser.readVal(i16),
+                .repeat => yc.* = 0,
+            }
+        }
+
+        return .{
+            .common = common,
+            .data = @alignCast(self.data[start..end]),
+            .end_pts_of_contours = end_pts_of_contours,
+            .instruction_length = instruction_length,
+            //.instructions = instructions,
+            .flags = flags,
+            .x_coordinates = x_coords,
+            .y_coordinates = y_coords,
+
+            .fl_ptr = fl_ptr,
+            .xc_ptr = xc_ptr,
+            .yc_ptr = yc_ptr,
+        };
     }
 
     pub fn simple(self: Table, alloc: Allocator, start: usize, end: usize) !Simple {
