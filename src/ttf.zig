@@ -277,27 +277,25 @@ pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyph.Header {
 
     if (glyf_start == glyf_end) return null;
 
-    return ttf.glyf.getGlyphCommon(glyf_start);
+    return ttf.glyf.glyphHeader(glyf_start);
 }
 
-pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !?Glyph.Simple {
+pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph.Simple {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const glyf_start, const glyf_end = switch (ttf.loca) {
         .u16 => |s| .{ @as(u32, s[glyph_index]) * 2, @as(u32, s[glyph_index + 1]) * 2 },
         .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
     };
 
-    if (glyf_start == glyf_end) return null;
+    if (glyf_start == glyf_end) return error.EmptyGlyph;
 
-    const glyph_header = ttf.glyf.getGlyphCommon(glyf_start);
+    const glyph_header = ttf.glyf.glyphHeader(glyf_start);
 
     if (glyph_header.number_of_contours < 0) {
-        std.debug.print("oopsies {} on {}\n", .{ glyph_header.number_of_contours, char });
-        //@panic("oops");
-        return null;
+        if (false) try ttf.glyf.compound(alloc, glyf_start, glyf_end);
+        return error.CompoundGlyphNotImplemented;
     }
-    //std.debug.assert(glyph_header.number_of_contours >= 0);
-    return try ttf.glyf.getGlyphSimple(alloc, glyf_start, glyf_end);
+    return try ttf.glyf.simple(alloc, glyf_start, glyf_end);
 }
 
 pub fn metricsForChar(ttf: Ttf, char: u16) HmtxTable.LongHorMetric {

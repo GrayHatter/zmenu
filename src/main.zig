@@ -92,7 +92,8 @@ pub fn main() !void {
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
-    const text: []const u8 = "this is some really long text, text that I HOPE will be longer than the surface width!";
+    var text: []const u8 = "i";
+    if (true) text = "this is some really long text, text that I HOPE will be longer than the surface width!";
     try drawText(alloc, &buffer, text, ttf);
 
     var i: usize = 0;
@@ -135,7 +136,7 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
     };
 
     for (tl.glyphs) |g| {
-        const glyph = try ttf.glyphForChar(alloc, g.char) orelse continue;
+        const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
 
         const canvas, _ = try glyph.renderSize(alloc, 14, ttf.head.units_per_em);
         buffer.drawFont(Buffer.ARGB, .black, .xywh(

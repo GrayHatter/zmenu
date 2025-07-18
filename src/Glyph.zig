@@ -17,16 +17,54 @@ pub const SimpleFlag = packed struct(u8) {
     y_is_same_or_positive_y_short_vector: bool,
     overlap_simple: bool,
     reserved: bool,
+
+    pub const Variant = enum {
+        short_pos,
+        short_neg,
+        long,
+        repeat,
+    };
+
+    pub fn variant(f: SimpleFlag, xy: enum { x, y }) Variant {
+        return switch (xy) {
+            .x => switch (f.x_short_vector) {
+                true => switch (f.x_is_same_or_positive_x_short_vector) {
+                    true => .short_pos,
+                    false => .short_neg,
+                },
+                false => switch (f.x_is_same_or_positive_x_short_vector) {
+                    true => .repeat,
+                    false => .long,
+                },
+            },
+
+            .y => switch (f.y_short_vector) {
+                true => switch (f.y_is_same_or_positive_y_short_vector) {
+                    true => .short_pos,
+                    false => .short_neg,
+                },
+                false => switch (f.y_is_same_or_positive_y_short_vector) {
+                    true => .repeat,
+                    false => .long,
+                },
+            },
+        };
+    }
 };
 
 pub const Simple = struct {
     common: Header,
+    data: []align(2) const u8,
     end_pts_of_contours: []u16,
     instruction_length: u16,
-    instructions: []u8,
+    //instructions: []u8,
     flags: []SimpleFlag,
     x_coordinates: []i16,
     y_coordinates: []i16,
+
+    fl_ptr: []const u8,
+    xc_ptr: []const u8,
+    yc_ptr: []const u8,
 
     pub fn renderSize(glyph: Glyph.Simple, alloc: Allocator, size: f32, u_per_em: usize) !RenderedGlyph {
         var curves = std.ArrayList(Glyph.SegmentIter.Output).init(alloc);
@@ -85,6 +123,16 @@ pub const Simple = struct {
     pub fn render1PxPerFunit(alloc: Allocator, glyph: Glyph.Simple) !RenderedGlyph {
         return try renderSize(alloc, glyph, 1.0, 1.0);
     }
+};
+
+pub const Compound = struct {
+    common: Header,
+    end_pts_of_contours: []u16,
+    instruction_length: u16,
+    instructions: []u8,
+    flags: []SimpleFlag,
+    x_coordinates: []i16,
+    y_coordinates: []i16,
 };
 
 pub const BBox = struct {
@@ -189,29 +237,6 @@ const Canvas = struct {
 
 const FPoint = @Vector(2, i16);
 
-pub const ParseVariant = enum {
-    short_pos,
-    short_neg,
-    long,
-    repeat,
-
-    pub fn fromBools(short: bool, is_same_or_positive_short: bool) ParseVariant {
-        if (short) {
-            if (is_same_or_positive_short) {
-                return .short_pos;
-            } else {
-                return .short_neg;
-            }
-        } else {
-            if (is_same_or_positive_short) {
-                return .repeat;
-            } else {
-                return .long;
-            }
-        }
-    }
-};
-
 const RuntimeParser = struct {
     data: []const u8,
     idx: usize = 0,
@@ -232,25 +257,47 @@ const RuntimeParser = struct {
 pub const Table = struct {
     data: []const u8,
 
-    pub fn getGlyphCommon(self: Table, start: usize) Header {
-        return fixEndianness(std.mem.bytesToValue(Header, self.data[start .. start + @bitSizeOf(Header) / 8]));
+    pub fn glyphHeader(self: Table, start: usize) Header {
+        const ptr: *align(2) const Header = @alignCast(@ptrCast(self.data[start..][0..@sizeOf(Header)]));
+
+        return .{
+            .number_of_contours = @byteSwap(ptr.number_of_contours),
+            .x_min = @byteSwap(ptr.x_min),
+            .x_max = @byteSwap(ptr.x_max),
+            .y_min = @byteSwap(ptr.y_min),
+            .y_max = @byteSwap(ptr.y_max),
+        };
     }
 
-    pub fn getGlyphSimple(self: Table, alloc: Allocator, start: usize, end: usize) !Glyph.Simple {
+    pub fn compound(self: Table, alloc: Allocator, start: usize, end: usize) !Compound {
+        _ = self;
+        _ = alloc;
+        _ = start;
+        _ = end;
+        unreachable;
+    }
+
+    pub fn simple(self: Table, alloc: Allocator, start: usize, end: usize) !Simple {
         var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
         const common = runtime_parser.readVal(Header);
 
+        //std.debug.print("common {}\n", .{common});
+
         const end_pts_of_contours = try runtime_parser.readArray(u16, alloc, @intCast(common.number_of_contours));
         const instruction_length = runtime_parser.readVal(u16);
-        const instructions = try runtime_parser.readArray(u8, alloc, instruction_length);
+        //const instructions = try runtime_parser.readArray(u8, alloc, instruction_length);
+        for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
         const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
-        const flags = try alloc.alloc(Glyph.SimpleFlag, num_contours);
 
+        const flags = try alloc.alloc(SimpleFlag, num_contours);
+        const x_coords = try alloc.alloc(i16, num_contours);
+        const y_coords = try alloc.alloc(i16, num_contours);
+
+        const fl_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
         var i: usize = 0;
         while (i < num_contours) {
             defer i += 1;
-            const flag_u8 = runtime_parser.readVal(u8);
-            const flag: Glyph.SimpleFlag = @bitCast(flag_u8);
+            const flag: SimpleFlag = @bitCast(runtime_parser.readVal(u8));
             std.debug.assert(flag.reserved == false);
 
             flags[i] = flag;
@@ -262,36 +309,39 @@ pub const Table = struct {
             }
         }
 
-        const x_coords = try alloc.alloc(i16, num_contours);
-        for (flags, 0..) |flag, idx| {
-            const parse_variant = Glyph.ParseVariant.fromBools(flag.x_short_vector, flag.x_is_same_or_positive_x_short_vector);
-            switch (parse_variant) {
-                .short_pos => x_coords[idx] = runtime_parser.readVal(u8),
-                .short_neg => x_coords[idx] = -@as(i16, runtime_parser.readVal(u8)),
-                .long => x_coords[idx] = runtime_parser.readVal(i16),
-                .repeat => x_coords[idx] = 0,
+        const xc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+        for (flags, x_coords) |flag, *xc| {
+            switch (flag.variant(.x)) {
+                .short_pos => xc.* = runtime_parser.readVal(u8),
+                .short_neg => xc.* = -@as(i16, runtime_parser.readVal(u8)),
+                .long => xc.* = runtime_parser.readVal(i16),
+                .repeat => xc.* = 0,
             }
         }
 
-        const y_coords = try alloc.alloc(i16, num_contours);
-        for (flags, 0..) |flag, idx| {
-            const parse_variant = Glyph.ParseVariant.fromBools(flag.y_short_vector, flag.y_is_same_or_positive_y_short_vector);
-            switch (parse_variant) {
-                .short_pos => y_coords[idx] = runtime_parser.readVal(u8),
-                .short_neg => y_coords[idx] = -@as(i16, runtime_parser.readVal(u8)),
-                .long => y_coords[idx] = runtime_parser.readVal(i16),
-                .repeat => y_coords[idx] = 0,
+        const yc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+        for (flags, y_coords) |flag, *yc| {
+            switch (flag.variant(.y)) {
+                .short_pos => yc.* = runtime_parser.readVal(u8),
+                .short_neg => yc.* = -@as(i16, runtime_parser.readVal(u8)),
+                .long => yc.* = runtime_parser.readVal(i16),
+                .repeat => yc.* = 0,
             }
         }
 
         return .{
             .common = common,
+            .data = @alignCast(self.data[start..end]),
             .end_pts_of_contours = end_pts_of_contours,
             .instruction_length = instruction_length,
-            .instructions = instructions,
+            //.instructions = instructions,
             .flags = flags,
             .x_coordinates = x_coords,
             .y_coordinates = y_coords,
+
+            .fl_ptr = fl_ptr,
+            .xc_ptr = xc_ptr,
+            .yc_ptr = yc_ptr,
         };
     }
 };
