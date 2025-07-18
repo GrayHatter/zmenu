@@ -8,62 +8,62 @@ pub const Header = packed struct {
     y_max: i16,
 };
 
-pub const SimpleFlag = packed struct(u8) {
-    on_curve_point: bool,
-    x_short_vector: bool,
-    y_short_vector: bool,
-    repeat_flag: bool,
-    x_is_same_or_positive_x_short_vector: bool,
-    y_is_same_or_positive_y_short_vector: bool,
-    overlap_simple: bool,
-    reserved: bool,
-
-    pub const Variant = enum {
-        short_pos,
-        short_neg,
-        long,
-        repeat,
-    };
-
-    pub fn variant(f: SimpleFlag, comptime xy: enum { x, y }) Variant {
-        return switch (comptime xy) {
-            .x => switch (f.x_short_vector) {
-                true => switch (f.x_is_same_or_positive_x_short_vector) {
-                    true => .short_pos,
-                    false => .short_neg,
-                },
-                false => switch (f.x_is_same_or_positive_x_short_vector) {
-                    true => .repeat,
-                    false => .long,
-                },
-            },
-            .y => switch (f.y_short_vector) {
-                true => switch (f.y_is_same_or_positive_y_short_vector) {
-                    true => .short_pos,
-                    false => .short_neg,
-                },
-                false => switch (f.y_is_same_or_positive_y_short_vector) {
-                    true => .repeat,
-                    false => .long,
-                },
-            },
-        };
-    }
-};
-
 pub const Simple = struct {
     common: Header,
     data: []align(2) const u8,
     end_pts_of_contours: []u16,
     instruction_length: u16,
     //instructions: []u8,
-    flags: []SimpleFlag,
+    flags: []Flags,
     x_coordinates: []i16,
     y_coordinates: []i16,
 
     fl_ptr: []const u8,
     xc_ptr: []const u8,
     yc_ptr: []const u8,
+
+    pub const Flags = packed struct(u8) {
+        on_curve_point: bool,
+        x_short_vector: bool,
+        y_short_vector: bool,
+        repeat_flag: bool,
+        x_is_same_or_positive_x_short_vector: bool,
+        y_is_same_or_positive_y_short_vector: bool,
+        overlap_simple: bool,
+        reserved: bool,
+
+        pub const Variant = enum {
+            short_pos,
+            short_neg,
+            long,
+            repeat,
+        };
+
+        pub fn variant(f: Flags, comptime xy: enum { x, y }) Variant {
+            return switch (comptime xy) {
+                .x => switch (f.x_short_vector) {
+                    true => switch (f.x_is_same_or_positive_x_short_vector) {
+                        true => .short_pos,
+                        false => .short_neg,
+                    },
+                    false => switch (f.x_is_same_or_positive_x_short_vector) {
+                        true => .repeat,
+                        false => .long,
+                    },
+                },
+                .y => switch (f.y_short_vector) {
+                    true => switch (f.y_is_same_or_positive_y_short_vector) {
+                        true => .short_pos,
+                        false => .short_neg,
+                    },
+                    false => switch (f.y_is_same_or_positive_y_short_vector) {
+                        true => .repeat,
+                        false => .long,
+                    },
+                },
+            };
+        }
+    };
 
     pub fn renderSize(glyph: Glyph.Simple, alloc: Allocator, size: f32, u_per_em: usize) !RenderedGlyph {
         var curves = std.ArrayList(Glyph.SegmentIter.Output).init(alloc);
@@ -370,7 +370,7 @@ pub const Table = struct {
         for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
         const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
 
-        const flags = try alloc.alloc(SimpleFlag, num_contours);
+        const flags = try alloc.alloc(Compound.Flags, num_contours);
         const x_coords = try alloc.alloc(i16, num_contours);
         const y_coords = try alloc.alloc(i16, num_contours);
 
@@ -378,7 +378,7 @@ pub const Table = struct {
         var i: usize = 0;
         while (i < num_contours) {
             defer i += 1;
-            const flag: SimpleFlag = @bitCast(runtime_parser.readVal(u8));
+            const flag: Compound.Flags = @bitCast(runtime_parser.readVal(u8));
             std.debug.assert(flag.reserved == false);
 
             flags[i] = flag;
@@ -438,7 +438,7 @@ pub const Table = struct {
         for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
         const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
 
-        const flags = try alloc.alloc(SimpleFlag, num_contours);
+        const flags = try alloc.alloc(Simple.Flags, num_contours);
         const x_coords = try alloc.alloc(i16, num_contours);
         const y_coords = try alloc.alloc(i16, num_contours);
 
@@ -446,7 +446,7 @@ pub const Table = struct {
         var i: usize = 0;
         while (i < num_contours) {
             defer i += 1;
-            const flag: SimpleFlag = @bitCast(runtime_parser.readVal(u8));
+            const flag: Simple.Flags = @bitCast(runtime_parser.readVal(u8));
             std.debug.assert(flag.reserved == false);
 
             flags[i] = flag;
