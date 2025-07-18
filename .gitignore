@@ -1,0 +1,5 @@
+zig-out/*
+.zig-cache/*
+fonts/*.zip
+fonts/*.ttf
+font.ttf
