@@ -54,4 +54,23 @@ pub fn build(b: *Build) !void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    {
+        // test font
+        const text_mod = b.createModule(.{
+            .root_source_file = b.path("src/text_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        const test_text = b.addExecutable(.{ .name = "text_test", .root_module = text_mod });
+
+        test_text.root_module.addImport("wayland", wayland);
+        test_text.linkLibC();
+        test_text.linkSystemLibrary("wayland-client");
+
+        const text_run_cmd = b.addRunArtifact(test_text);
+        const text_run_step = b.step("test-text", "Run text test app");
+        text_run_step.dependOn(&text_run_cmd.step);
+    }
 }

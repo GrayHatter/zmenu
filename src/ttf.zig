@@ -397,14 +397,28 @@ test {
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
 
-    const glyph = try ttf.glyphForChar(alloc, 'i');
-    if (false) std.debug.print("glyph {}\n", .{glyph});
-    if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
-    switch (glyph.glyph) {
-        .compound => |comp| for (comp.components) |c| {
-            if (false) std.debug.print("      {}\n", .{c});
-        },
-        else => {},
+    for ("abcdefghijklmnopqrstuvwxyz") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        if (false) std.debug.print("glyph {}\n", .{glyph});
+        if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
+        switch (glyph.glyph) {
+            .compound => |comp| for (comp.components) |c| {
+                if (false) std.debug.print("      {}\n", .{c});
+            },
+            else => {},
+        }
+    }
+
+    for ("ABCDEFGHIJKLMNOPQRSTUVWXYZ") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        if (false) std.debug.print("glyph {}\n", .{glyph});
+        if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
+        switch (glyph.glyph) {
+            .compound => |comp| for (comp.components) |c| {
+                if (false) std.debug.print("      {}\n", .{c});
+            },
+            else => {},
+        }
     }
 }
 
