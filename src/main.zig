@@ -92,9 +92,13 @@ pub fn main() !void {
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
+
+    var glyph_cache: Glyph.Cache = .init(14);
+    defer glyph_cache.raze(alloc);
+
     var text: []const u8 = "i";
     if (true) text = "this is some really long text, text that I HOPE will be longer than the surface width!";
-    try drawText(alloc, &buffer, text, ttf);
+    try drawText(alloc, &glyph_cache, &buffer, text, ttf);
 
     var i: usize = 0;
     while (zm.running) {
@@ -120,7 +124,7 @@ pub fn main() !void {
     }
 }
 
-fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf) !void {
+fn drawText(alloc: Allocator, cache: *Glyph.Cache, buffer: *const Buffer, text: []const u8, ttf: Ttf) !void {
     var layout_helper = LayoutHelper.init(alloc, text, ttf, 512, 14);
     defer layout_helper.glyphs.deinit();
     while (try layout_helper.step(ttf)) {}
@@ -134,9 +138,9 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
     };
 
     for (tl.glyphs) |g| {
-        const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
-
-        const canvas, _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+        //const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
+        //const canvas, _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+        const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(400 + g.pixel_x1),
             @intCast(100 - g.pixel_y1),
@@ -172,6 +176,7 @@ test {
 const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
+const Glyph = @import("Glyph.zig");
 const listeners = @import("listeners.zig").Listeners(ZMenu);
 
 const std = @import("std");

@@ -455,6 +455,37 @@ fn fixEndianness(val: anytype) @TypeOf(val) {
     }
 }
 
+pub const Cache = struct {
+    map: std.AutoHashMapUnmanaged(u8, RenderedGlyph) = .{},
+    size: f32,
+
+    pub fn init(size: f32) Cache {
+        return .{
+            .size = size,
+        };
+    }
+
+    pub fn raze(c: *Cache, a: Allocator) void {
+        var kitr = c.map.keyIterator();
+        while (kitr.next()) |key| {
+            _ = c.map.fetchRemove(key.*);
+            // TODO clean up glyph canvas
+        }
+        c.map.deinit(a);
+    }
+
+    pub fn get(c: *Cache, a: Allocator, ttf: Ttf, char: u8) !*const RenderedGlyph {
+        const gop = try c.map.getOrPut(a, char);
+        errdefer _ = c.map.remove(char);
+        if (!gop.found_existing) {
+            const g = try ttf.glyphForChar(a, char);
+            const rendered = try g.renderSize(a, ttf, c.size, ttf.head.units_per_em);
+            gop.value_ptr.* = rendered;
+        }
+        return gop.value_ptr;
+    }
+};
+
 //fn pixelBoundsForGlyph(scale: f32, header: Glyph.Header) [2]u16 {
 //    const width_f: f32 = @floatFromInt(header.x_max - header.x_min);
 //    const height_f: f32 = @floatFromInt(header.y_max - header.y_min);

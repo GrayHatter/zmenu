@@ -11,9 +11,7 @@ cmap_subtable: Cmap.SubtableFormat4,
 const Ttf = @This();
 
 const Head = @import("ttf/tables/Head.zig");
-
 const Maxp = @import("ttf/tables/Maxp.zig");
-
 const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
 
