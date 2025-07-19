@@ -289,7 +289,7 @@ pub const RenderedGlyph = struct {
     BBox,
 };
 
-pub fn render1PxPerFunit(glyph: Glyph, alloc: Allocator, ttf: Ttf) !RenderedGlyph {
+pub fn render(glyph: Glyph, alloc: Allocator, ttf: Ttf) !RenderedGlyph {
     return try glyph.renderSize(alloc, ttf, 1.0, 1.0);
 }
 

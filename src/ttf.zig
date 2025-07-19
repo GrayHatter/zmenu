@@ -48,7 +48,7 @@ const MaxpTable = packed struct {
     maxComponentDepth: u16,
 };
 
-const Cmap = @import("ttf/Cmap.zig");
+const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
 
 pub const LocaSlice = union(enum) {
@@ -66,6 +66,17 @@ const HeaderTag = enum {
     glyf,
     hhea,
     hmtx,
+    // not yet implemented
+    post,
+    prep,
+    name,
+    @"OS/2",
+    gasp,
+    BASE,
+    GDEF,
+    GPOS,
+    GSUB,
+    STAT,
 };
 const HheaTable = packed struct {
     version: Fixed,
@@ -149,44 +160,9 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
     var hhea: ?HheaTable = null;
     var hmtx: ?HmtxTable = null;
 
-    //    for (table_entries) |entry_big| {
-    //        const entry = fixEndianness(entry_big);
-    //        const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
-    //
-    //        const tbl: []align(2) const u8 = @alignCast(tableFromEntry(font_data, entry));
-    //        switch (tag) {
-    //            .head => {
-    //                head = bytesToValue(HeadTable, tbl);
-    //                byteSwapAllFields(HeadTable, &head.?);
-    //            },
-    //            .hhea => {
-    //                hhea = bytesToValue(HheaTable, tbl);
-    //                byteSwapAllFields(HheaTable, &hhea.?);
-    //            },
-    //            .loca => {
-    //                loca = switch (head.?.index_to_loc_format) {
-    //                    0 => .{ .u16 = try fixSliceEndianness(u16, alloc, std.mem.bytesAsSlice(u16, tbl)) },
-    //                    1 => .{ .u32 = try fixSliceEndianness(u32, alloc, std.mem.bytesAsSlice(u32, tbl)) },
-    //                    else => @panic("these are the only two options, I promise!"),
-    //                };
-    //            },
-    //            .maxp => {
-    //                maxp = fixEndianness(std.mem.bytesToValue(MaxpTable, tbl));
-    //            },
-    //            .cmap => {
-    //                cmap = CmapTable{ .cmap_bytes = tbl };
-    //            },
-    //            .glyf => {
-    //                glyf = GlyphTable{ .data = tbl };
-    //            },
-    //            .hmtx => {
-    //                hmtx = HmtxTable{ .hmtx_bytes = tbl };
-    //            },
-    //        }
-    //    }
-
     for (table_entries) |entry_big| {
         const entry = fixEndianness(entry_big);
+        //std.debug.print("header name {s}\n", .{entry.tag});
         const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
 
         switch (tag) {
@@ -203,6 +179,9 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
             .cmap => cmap = CmapTable{ .cmap_bytes = tableFromEntry(font_data, entry) },
             .glyf => glyf = Glyph.Table{ .data = tableFromEntry(font_data, entry) },
             .hmtx => hmtx = HmtxTable{ .hmtx_bytes = tableFromEntry(font_data, entry) },
+            // skip
+            .post, .prep, .name, .@"OS/2", .gasp => {},
+            .BASE, .GDEF, .GSUB, .GPOS, .STAT => {},
         }
     }
 

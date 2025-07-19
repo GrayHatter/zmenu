@@ -79,7 +79,7 @@ pub const SubtableFormat4 = struct {
 };
 
 pub fn readIndex(self: Cmap) Index {
-    return Ttf.fixEndianness(std.mem.bytesToValue(Index, self.cmap_bytes[0 .. @bitSizeOf(Index) / 8]));
+    return fixEndianness(std.mem.bytesToValue(Index, self.cmap_bytes[0 .. @bitSizeOf(Index) / 8]));
 }
 
 pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
@@ -87,15 +87,15 @@ pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
     const start = @bitSizeOf(Index) / 8 + idx * subtable_size;
     const end = start + subtable_size;
 
-    return Ttf.fixEndianness(std.mem.bytesToValue(SubtableLookup, self.cmap_bytes[start..end]));
+    return fixEndianness(std.mem.bytesToValue(SubtableLookup, self.cmap_bytes[start..end]));
 }
 
 pub fn readSubtableFormat(self: Cmap, offset: usize) u16 {
-    return Ttf.fixEndianness(std.mem.bytesToValue(u16, self.cmap_bytes[offset .. offset + 2]));
+    return fixEndianness(std.mem.bytesToValue(u16, self.cmap_bytes[offset .. offset + 2]));
 }
 
 pub fn readSubtableFormat4(self: Cmap, alloc: Allocator, offset: usize) !SubtableFormat4 {
-    var runtime_parser = Ttf.RuntimeParser{ .data = self.cmap_bytes[offset..] };
+    var runtime_parser = RuntimeParser{ .data = self.cmap_bytes[offset..] };
     const format = runtime_parser.readVal(u16);
     const length = runtime_parser.readVal(u16);
     const language = runtime_parser.readVal(u16);
@@ -128,6 +128,49 @@ pub fn readSubtableFormat4(self: Cmap, alloc: Allocator, offset: usize) !Subtabl
     };
 }
 
+pub fn fixEndianness(val: anytype) @TypeOf(val) {
+    if (builtin.cpu.arch.endian() == .big) {
+        return val;
+    }
+
+    switch (@typeInfo(@TypeOf(val))) {
+        .@"struct" => {
+            var ret = val;
+            std.mem.byteSwapAllFields(@TypeOf(val), &ret);
+            return ret;
+        },
+        .int => {
+            return std.mem.bigToNative(@TypeOf(val), val);
+        },
+        inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
+    }
+}
+
+pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]T {
+    const duped = try alloc.alloc(T, slice.len);
+    for (0..slice.len) |i| {
+        duped[i] = fixEndianness(slice[i]);
+    }
+    return duped;
+}
+
+pub const RuntimeParser = struct {
+    data: []const u8,
+    idx: usize = 0,
+
+    pub fn readVal(self: *RuntimeParser, comptime T: type) T {
+        const size = @bitSizeOf(T) / 8;
+        defer self.idx += size;
+        return fixEndianness(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
+    }
+
+    pub fn readArray(self: *RuntimeParser, comptime T: type, alloc: Allocator, len: usize) ![]T {
+        const size = @bitSizeOf(T) / 8 * len;
+        defer self.idx += size;
+        return fixSliceEndianness(T, alloc, std.mem.bytesAsSlice(T, self.data[self.idx .. self.idx + size]));
+    }
+};
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Ttf = @import("../ttf.zig");
+const builtin = @import("builtin");
