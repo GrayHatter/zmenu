@@ -138,7 +138,7 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
     for (tl.glyphs) |g| {
         const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
 
-        const canvas, _ = try glyph.renderSize(alloc, 14, ttf.head.units_per_em);
+        const canvas, _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(400 + g.pixel_x1),
             @intCast(100 - g.pixel_y1),

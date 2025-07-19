@@ -1,4 +1,14 @@
+header: Header,
+data: []align(2) const u8,
+
+glyph: Type,
+
 const Glyph = @This();
+
+pub const Type = union(enum) {
+    simple: Simple,
+    compound: Compound,
+};
 
 pub const Header = packed struct {
     number_of_contours: i16,
@@ -9,8 +19,6 @@ pub const Header = packed struct {
 };
 
 pub const Simple = struct {
-    common: Header,
-    data: []align(2) const u8,
     end_pts_of_contours: []u16,
     instruction_length: u16,
     //instructions: []u8,
@@ -65,30 +73,20 @@ pub const Simple = struct {
         }
     };
 
-    pub fn renderSize(glyph: Glyph.Simple, alloc: Allocator, size: f32, u_per_em: usize) !RenderedGlyph {
+    pub fn renderSize(glyph: Simple, alloc: Allocator, bbox: BBox, canvas: *Canvas, size: f32, u_per_em: usize) !void {
         var curves = std.ArrayList(Glyph.SegmentIter.Output).init(alloc);
         defer curves.deinit();
 
         _ = size;
         _ = u_per_em;
-        //const s = fontScale(size, @floatFromInt(u_per_em));
-        var bbox = BBox{
-            .min_x = glyph.common.x_min,
-            .max_x = glyph.common.x_max,
-            .min_y = glyph.common.y_min,
-            .max_y = glyph.common.y_max,
-        };
 
         var iter = Glyph.SegmentIter.init(glyph);
         while (iter.next()) |item| {
             try curves.append(item);
         }
 
-        var canvas = try Canvas.init(alloc, ((bbox.width() + 7) / 8) * 8, bbox.height());
-
         var y = bbox.min_y;
-        while (y < bbox.max_y) {
-            defer y += 1;
+        while (y < bbox.max_y) : (y += 1) {
             const not_y: i64 = y - @as(isize, @intCast(bbox.min_y));
             const row_curve_points = try findRowCurvePoints(alloc, curves.items, y);
             defer alloc.free(row_curve_points);
@@ -110,24 +108,10 @@ pub const Simple = struct {
                 }
             }
         }
-
-        return .{ canvas, bbox };
-    }
-
-    pub const RenderedGlyph = struct {
-        Canvas,
-        BBox,
-    };
-
-    pub fn render1PxPerFunit(alloc: Allocator, glyph: Glyph.Simple) !RenderedGlyph {
-        return try renderSize(alloc, glyph, 1.0, 1.0);
     }
 };
 
 pub const Compound = struct {
-    common: Header,
-    data: []const u8,
-
     //Compound glyphs are glyphs made up of two or more component glyphs. A
     //compound glyph description begins like a simple glyph description with
     //four words describing the bounding box. It is followed by n component
@@ -138,10 +122,7 @@ pub const Compound = struct {
     //documented in Table 17. The meanings associated with the flags in the
     //first entry are given in Table 18.
 
-    flags: u16,
-    glyphIndex: u16,
-    arg1: union { int16: i16, uint16: u16, int8: i8, uint8: u8 },
-    arg2: union { int16: i16, uint16: u16, int8: i8, uint8: u8 },
+    components: []Component,
 
     pub const Flags = packed struct(u16) {
         args_are_words: bool,
@@ -172,6 +153,14 @@ pub const Compound = struct {
         },
     };
 
+    pub const Component = struct {
+        flag: Flags,
+        index: u32,
+        arg0: u16,
+        arg1: u16,
+        transform: Transform,
+    };
+
     fn getED(f: Flags) struct { f16, f16 } {
         const _f8 = 0;
         const _f16 = 0;
@@ -189,26 +178,37 @@ pub const Compound = struct {
         }
     }
 
-    fn getABCD(f: Flags) struct { u16, u16, u16, u16 } {
-        const _u16 = 0;
-        if (!f.single_scale) return .{ 1, 0, 0, 1 };
+    fn getTransform(f: Flags, rp: *RuntimeParser) Transform {
+        if (!f.single_scale) return .{ .scale = 1 };
 
         if (f.single_scale) {
             std.debug.assert(!f.x_and_y_scales);
             std.debug.assert(!f.two_by_two_scales);
-            return .{ _u16, 0, 0, _u16 };
+
+            return .{ .xy_scale = .{
+                .x = rp.readVal(u16),
+                .y = rp.readVal(u16),
+            } };
         }
         if (f.x_and_y_scales) {
             std.debug.assert(!f.single_scale);
             std.debug.assert(!f.two_by_two_scales);
-            return .{ _u16, 0, 0, _u16 };
+            return .{ .xy_scale = .{
+                .x = rp.readVal(u16),
+                .y = rp.readVal(u16),
+            } };
         }
         if (f.two_by_two_scales) {
             std.debug.assert(!f.single_scale);
             std.debug.assert(!f.two_by_two_scales);
-            return .{ _u16, _u16, _u16, _u16 };
+            return .{ .xy_twoby = .{
+                .x = rp.readVal(u16),
+                .z01 = rp.readVal(u16),
+                .z10 = rp.readVal(u16),
+                .y = rp.readVal(u16),
+            } };
         }
-        return undefined;
+        unreachable;
     }
 
     fn transformation(a: i16, b: i16, c: i16, d: i16, e: i16) void {
@@ -254,6 +254,44 @@ pub const BBox = struct {
         };
     }
 };
+
+pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, size: f32, u_per_em: usize) !RenderedGlyph {
+
+    //const s = fontScale(size, @floatFromInt(u_per_em));
+    var bbox = BBox{
+        .min_x = glyph.header.x_min,
+        .max_x = glyph.header.x_max,
+        .min_y = glyph.header.y_min,
+        .max_y = glyph.header.y_max,
+    };
+
+    var canvas = try Canvas.init(alloc, ((bbox.width() + 7) / 8) * 8, bbox.height());
+
+    switch (glyph.glyph) {
+        .simple => |s| {
+            try s.renderSize(alloc, bbox, &canvas, size, u_per_em);
+        },
+        .compound => |c| {
+            for (c.components) |com| {
+                const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
+                const next = try ttf.glyf.glyph(alloc, start, end);
+                if (next.glyph != .simple) @panic("something's fucky");
+                try next.glyph.simple.renderSize(alloc, bbox, &canvas, size, u_per_em);
+            }
+        },
+    }
+
+    return .{ canvas, bbox };
+}
+
+pub const RenderedGlyph = struct {
+    Canvas,
+    BBox,
+};
+
+pub fn render1PxPerFunit(alloc: Allocator, glyph: Glyph.Simple) !RenderedGlyph {
+    return try renderSize(alloc, glyph, 1.0, 1.0);
+}
 
 const Canvas = struct {
     pixels: []u8,
@@ -358,79 +396,48 @@ pub const Table = struct {
         };
     }
 
-    pub fn compound(self: Table, alloc: Allocator, start: usize, end: usize) !Compound {
-        var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
-        const common = runtime_parser.readVal(Header);
-
-        //std.debug.print("common {}\n", .{common});
-
-        const end_pts_of_contours = try runtime_parser.readArray(u16, alloc, @intCast(common.number_of_contours));
-        const instruction_length = runtime_parser.readVal(u16);
-        //const instructions = try runtime_parser.readArray(u8, alloc, instruction_length);
-        for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
-        const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
-
-        const flags = try alloc.alloc(Compound.Flags, num_contours);
-        const x_coords = try alloc.alloc(i16, num_contours);
-        const y_coords = try alloc.alloc(i16, num_contours);
-
-        const fl_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
-        var i: usize = 0;
-        while (i < num_contours) {
-            defer i += 1;
-            const flag: Compound.Flags = @bitCast(runtime_parser.readVal(u8));
-            std.debug.assert(flag.reserved == false);
-
-            flags[i] = flag;
-
-            if (flag.repeat_flag) {
-                const num_repetitions = runtime_parser.readVal(u8);
-                @memset(flags[i + 1 .. i + 1 + num_repetitions], flag);
-                i += num_repetitions;
-            }
-        }
-
-        const xc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
-        for (flags, x_coords) |flag, *xc| {
-            switch (flag.variant(.x)) {
-                .short_pos => xc.* = runtime_parser.readVal(u8),
-                .short_neg => xc.* = -@as(i16, runtime_parser.readVal(u8)),
-                .long => xc.* = runtime_parser.readVal(i16),
-                .repeat => xc.* = 0,
-            }
-        }
-
-        const yc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
-        for (flags, y_coords) |flag, *yc| {
-            switch (flag.variant(.y)) {
-                .short_pos => yc.* = runtime_parser.readVal(u8),
-                .short_neg => yc.* = -@as(i16, runtime_parser.readVal(u8)),
-                .long => yc.* = runtime_parser.readVal(i16),
-                .repeat => yc.* = 0,
-            }
-        }
+    pub fn glyph(t: Table, alloc: Allocator, start: usize, end: usize) !Glyph {
+        const header = t.glyphHeader(start);
 
         return .{
-            .common = common,
-            .data = @alignCast(self.data[start..end]),
-            .end_pts_of_contours = end_pts_of_contours,
-            .instruction_length = instruction_length,
-            //.instructions = instructions,
-            .flags = flags,
-            .x_coordinates = x_coords,
-            .y_coordinates = y_coords,
-
-            .fl_ptr = fl_ptr,
-            .xc_ptr = xc_ptr,
-            .yc_ptr = yc_ptr,
+            .header = header,
+            .data = @alignCast(t.data[start..end]),
+            .glyph = if (header.number_of_contours < 0) .{
+                .compound = try t.compound(alloc, start, end),
+            } else .{
+                .simple = try t.simple(alloc, start, end),
+            },
         };
+    }
+
+    pub fn compound(self: Table, alloc: Allocator, start: usize, end: usize) !Compound {
+        var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
+        _ = runtime_parser.readVal(Header);
+        var clist: std.ArrayList(Compound.Component) = .init(alloc);
+        while (true) {
+            const flags: Compound.Flags = @bitCast(runtime_parser.readVal(u16));
+            const index: u16 = runtime_parser.readVal(u16);
+            const arg0: u16, const arg1: u16 = if (flags.args_are_words)
+                .{ runtime_parser.readVal(u16), runtime_parser.readVal(u16) }
+            else
+                .{ runtime_parser.readVal(u8), runtime_parser.readVal(u8) };
+            const transform = Compound.getTransform(flags, &runtime_parser);
+            try clist.append(.{
+                .flag = flags,
+                .index = index,
+                .arg0 = arg0,
+                .arg1 = arg1,
+                .transform = transform,
+            });
+            if (!flags.more_components) break;
+        }
+
+        return .{ .components = try clist.toOwnedSlice() };
     }
 
     pub fn simple(self: Table, alloc: Allocator, start: usize, end: usize) !Simple {
         var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
         const common = runtime_parser.readVal(Header);
-
-        //std.debug.print("common {}\n", .{common});
 
         const end_pts_of_contours = try runtime_parser.readArray(u16, alloc, @intCast(common.number_of_contours));
         const instruction_length = runtime_parser.readVal(u16);
@@ -479,8 +486,6 @@ pub const Table = struct {
         }
 
         return .{
-            .common = common,
-            .data = @alignCast(self.data[start..end]),
             .end_pts_of_contours = end_pts_of_contours,
             .instruction_length = instruction_length,
             //.instructions = instructions,
@@ -1269,3 +1274,4 @@ pub fn pixelFromFunit(scale: f32, funit: i64) i32 {
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
+const Ttf = @import("ttf.zig");

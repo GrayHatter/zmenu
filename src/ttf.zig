@@ -268,34 +268,27 @@ fn readSubtable(alloc: Allocator, cmap: CmapTable) !CmapTable.SubtableFormat4 {
     return try cmap.readSubtableFormat4(alloc, unicode_table_offs);
 }
 
-pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyph.Header {
-    const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const glyf_start, const glyf_end = switch (ttf.loca) {
-        .u16 => |s| .{ @as(u32, s[glyph_index]) * 2, @as(u32, s[glyph_index + 1]) * 2 },
-        .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
+pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
+    const start, const end = switch (ttf.loca) {
+        .u16 => |s| .{ @as(u32, s[idx]) * 2, @as(u32, s[idx + 1]) * 2 },
+        .u32 => |l| .{ l[idx], l[idx + 1] },
     };
 
-    if (glyf_start == glyf_end) return null;
-
-    return ttf.glyf.glyphHeader(glyf_start);
+    if (start == end) return null;
+    return .{ start, end };
 }
 
-pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph.Simple {
+pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyph.Header {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const glyf_start, const glyf_end = switch (ttf.loca) {
-        .u16 => |s| .{ @as(u32, s[glyph_index]) * 2, @as(u32, s[glyph_index + 1]) * 2 },
-        .u32 => |l| .{ l[glyph_index], l[glyph_index + 1] },
-    };
+    const start, _ = ttf.offsetFromIndex(glyph_index) orelse return null;
+    return ttf.glyf.glyphHeader(start);
+}
 
-    if (glyf_start == glyf_end) return error.EmptyGlyph;
+pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph {
+    const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
+    const start, const end = ttf.offsetFromIndex(glyph_index) orelse return error.EmptyGlyph;
 
-    const glyph_header = ttf.glyf.glyphHeader(glyf_start);
-
-    if (glyph_header.number_of_contours < 0) {
-        if (false) try ttf.glyf.compound(alloc, glyf_start, glyf_end);
-        return error.CompoundGlyphNotImplemented;
-    }
-    return try ttf.glyf.simple(alloc, glyf_start, glyf_end);
+    return ttf.glyf.glyph(alloc, start, end);
 }
 
 pub fn metricsForChar(ttf: Ttf, char: u16) HmtxTable.LongHorMetric {
@@ -391,6 +384,28 @@ pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) 
         duped[i] = fixEndianness(slice[i]);
     }
     return duped;
+}
+
+test {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const embed = @embedFile("font.ttf");
+    const font: []align(2) u8 = try alloc.alignedAlloc(u8, 2, embed.len);
+    @memcpy(font, embed);
+    defer alloc.free(font);
+    const ttf = try Ttf.init(alloc, font);
+
+    const glyph = try ttf.glyphForChar(alloc, 'i');
+    if (false) std.debug.print("glyph {}\n", .{glyph});
+    if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
+    switch (glyph.glyph) {
+        .compound => |comp| for (comp.components) |c| {
+            if (false) std.debug.print("      {}\n", .{c});
+        },
+        else => {},
+    }
 }
 
 test {
