@@ -1,5 +1,5 @@
-head: HeadTable,
-maxp: MaxpTable,
+head: Head.Table,
+maxp: Maxp.Table,
 cmap: Cmap,
 loca: LocaSlice,
 glyf: Glyph.Table,
@@ -10,43 +10,9 @@ cmap_subtable: Cmap.SubtableFormat4,
 
 const Ttf = @This();
 
-const HeadTable = packed struct {
-    version: Fixed,
-    font_revision: Fixed,
-    check_sum_adjustment: u32,
-    magic_number: u32,
-    flags: u16,
-    units_per_em: u16,
-    created: i64,
-    modified: i64,
-    x_min: i16,
-    y_min: i16,
-    x_max: i16,
-    y_max: i16,
-    mac_style: u16,
-    lowest_rec_ppem: u16,
-    font_direction_hint: i16,
-    index_to_loc_format: i16,
-    glyph_data_format: i16,
-};
+const Head = @import("ttf/tables/Head.zig");
 
-const MaxpTable = packed struct {
-    version: Fixed,
-    num_glyphs: u16,
-    max_points: u16,
-    max_contours: u16,
-    max_component_points: u16,
-    max_component_contours: u16,
-    max_zones: u16,
-    max_twilight_points: u16,
-    max_storage: u16,
-    max_function_defs: u16,
-    max_instruction_defs: u16,
-    maxStackElements: u16,
-    maxSizeOfInstructions: u16,
-    maxComponentElements: u16,
-    maxComponentDepth: u16,
-};
+const Maxp = @import("ttf/tables/Maxp.zig");
 
 const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
@@ -152,8 +118,8 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
     const table_directory_start = @bitSizeOf(OffsetTable) / 8;
     const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
     const table_entries = std.mem.bytesAsSlice(TableDirectoryEntry, font_data[table_directory_start..table_directory_end]);
-    var head: ?HeadTable = null;
-    var maxp: ?MaxpTable = null;
+    var head: ?Head.Table = null;
+    var maxp: ?Maxp.Table = null;
     var cmap: ?CmapTable = null;
     var glyf: ?Glyph.Table = null;
     var loca: ?LocaSlice = null;
@@ -166,7 +132,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
         const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
 
         switch (tag) {
-            .head => head = fixEndianness(std.mem.bytesToValue(HeadTable, tableFromEntry(font_data, entry))),
+            .head => head = fixEndianness(std.mem.bytesToValue(Head.Table, tableFromEntry(font_data, entry))),
             .hhea => hhea = fixEndianness(std.mem.bytesToValue(HheaTable, tableFromEntry(font_data, entry))),
             .loca => {
                 loca = switch (head.?.index_to_loc_format) {
@@ -175,7 +141,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
                     else => @panic("these are the only two options, I promise!"),
                 };
             },
-            .maxp => maxp = fixEndianness(std.mem.bytesToValue(MaxpTable, tableFromEntry(font_data, entry))),
+            .maxp => maxp = fixEndianness(std.mem.bytesToValue(Maxp.Table, tableFromEntry(font_data, entry))),
             .cmap => cmap = CmapTable{ .cmap_bytes = tableFromEntry(font_data, entry) },
             .glyf => glyf = Glyph.Table{ .data = tableFromEntry(font_data, entry) },
             .hmtx => hmtx = HmtxTable{ .hmtx_bytes = tableFromEntry(font_data, entry) },
@@ -192,7 +158,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
     // Magic is easy to check
     std.debug.assert(head_unwrapped.magic_number == 0x5F0F3CF5);
 
-    const subtable = try readSubtable(alloc, cmap orelse unreachable);
+    const subtable = try readSubtable(alloc, cmap orelse return error.NoCMAP);
 
     return .{
         .maxp = maxp orelse return error.NoMaxp,
