@@ -120,8 +120,6 @@ pub fn main() !void {
     }
 }
 
-fn initWayland() !void {}
-
 fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf) !void {
     var layout_helper = LayoutHelper.init(alloc, text, ttf, 512, 14);
     defer layout_helper.glyphs.deinit();
@@ -174,7 +172,7 @@ test {
 const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
-const listeners = @import("listeners.zig");
+const listeners = @import("listeners.zig").Listeners(ZMenu);
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
