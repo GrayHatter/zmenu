@@ -73,13 +73,10 @@ pub const Simple = struct {
         }
     };
 
-    pub fn renderSize(glyph: Simple, alloc: Allocator, bbox: BBox, canvas: *Canvas, size: f32, u_per_em: usize) !void {
-        var curves = std.ArrayList(Segment.Segment).init(alloc);
-        defer curves.deinit();
-
+    pub fn renderSize(glyph: Simple, bbox: BBox, canvas: *Canvas, size: f32, u_per_em: usize) !void {
         _ = size;
         _ = u_per_em;
-
+        var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
         var iter = Glyph.Segment.Iterator.init(glyph);
         while (iter.next()) |item| {
             try curves.append(item);
@@ -88,7 +85,7 @@ pub const Simple = struct {
         var y = bbox.min_y;
         while (y < bbox.max_y) : (y += 1) {
             const not_y: i64 = y - @as(isize, @intCast(bbox.min_y));
-            const row_curve_points = try Segment.findRowCurvePoints(curves.items, y);
+            const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
 
             var winding_count: i64 = 0;
             var start: i64 = 0;
@@ -270,14 +267,14 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, size: f32, u_per_em:
 
     switch (glyph.glyph) {
         .simple => |s| {
-            try s.renderSize(alloc, bbox, &canvas, size, u_per_em);
+            try s.renderSize(bbox, &canvas, size, u_per_em);
         },
         .compound => |c| {
             for (c.components) |com| {
                 const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
                 const next = try ttf.glyf.glyph(alloc, start, end);
                 if (next.glyph != .simple) @panic("something's fucky");
-                try next.glyph.simple.renderSize(alloc, bbox, &canvas, size, u_per_em);
+                try next.glyph.simple.renderSize(bbox, &canvas, size, u_per_em);
             }
         },
     }
