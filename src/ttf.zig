@@ -330,6 +330,8 @@ pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) 
 }
 
 test {
+    const debug_print_timing = false;
+
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -340,29 +342,37 @@ test {
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
 
+    var timer = try std.time.Timer.start();
+
     for ("abcdefghijklmnopqrstuvwxyz") |char| {
         const glyph = try ttf.glyphForChar(alloc, char);
-        if (false) std.debug.print("glyph {}\n", .{glyph});
-        if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
-        switch (glyph.glyph) {
-            .compound => |comp| for (comp.components) |c| {
-                if (false) std.debug.print("      {}\n", .{c});
-            },
-            else => {},
-        }
+        _ = glyph;
     }
-
     for ("ABCDEFGHIJKLMNOPQRSTUVWXYZ") |char| {
         const glyph = try ttf.glyphForChar(alloc, char);
-        if (false) std.debug.print("glyph {}\n", .{glyph});
-        if (false) std.debug.print("glyph {}\n", .{glyph.glyph});
-        switch (glyph.glyph) {
-            .compound => |comp| for (comp.components) |c| {
-                if (false) std.debug.print("      {}\n", .{c});
-            },
-            else => {},
-        }
+        _ = glyph;
     }
+    if (debug_print_timing) std.debug.print("after load        {d: >8}\n", .{timer.lap()});
+
+    for ("abcdefghijklmnopqrstuvwxyz") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        _ = try glyph.render(alloc, ttf);
+    }
+    for ("ABCDEFGHIJKLMNOPQRSTUVWXYZ") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        _ = try glyph.render(alloc, ttf);
+    }
+    if (debug_print_timing) std.debug.print("after render      {d: >8}\n", .{timer.lap()});
+
+    for ("abcdefghijklmnopqrstuvwxyz") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+    }
+    for ("ABCDEFGHIJKLMNOPQRSTUVWXYZ") |char| {
+        const glyph = try ttf.glyphForChar(alloc, char);
+        _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+    }
+    if (debug_print_timing) std.debug.print("after render size {d: >8}\n", .{timer.lap()});
 }
 
 test {

@@ -88,12 +88,11 @@ pub const Simple = struct {
         var y = bbox.min_y;
         while (y < bbox.max_y) : (y += 1) {
             const not_y: i64 = y - @as(isize, @intCast(bbox.min_y));
-            const row_curve_points = try Segment.findRowCurvePoints(alloc, curves.items, y);
-            defer alloc.free(row_curve_points);
+            const row_curve_points = try Segment.findRowCurvePoints(curves.items, y);
 
             var winding_count: i64 = 0;
             var start: i64 = 0;
-            for (row_curve_points) |point| {
+            for (row_curve_points.slice()) |point| {
                 if (point.entering == false) {
                     winding_count -= 1;
                 } else {
@@ -104,7 +103,9 @@ pub const Simple = struct {
                 }
                 // NOTE: Always see true first due to sorting
                 if (winding_count == 0) {
-                    canvas.draw(not_y, start - bbox.min_x, point.x_pos - bbox.min_x);
+                    const left = @min(start, point.x_pos);
+                    const right = @max(start, point.x_pos);
+                    canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
                 }
             }
         }
@@ -511,4 +512,4 @@ const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const Ttf = @import("ttf.zig");
 const Canvas = @import("Canvas.zig");
-const Segment = @import("glyph/Segment.zig");
+pub const Segment = @import("glyph/Segment.zig");

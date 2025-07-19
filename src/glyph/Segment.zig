@@ -96,93 +96,106 @@ pub const Iterator = struct {
     }
 };
 
-pub fn findRowCurvePoints(alloc: Allocator, curves: []const Segment, y: i64) ![]RowCurvePoint {
-    var ret = std.ArrayList(RowCurvePoint.Inner).init(alloc);
-    defer ret.deinit();
+pub fn findRowCurvePoint(curve: Segment, y: i64) !RowCurvePoint {
+    _ = curve;
+    _ = y;
+}
 
+fn linePoints(l: Segment.Line, y: i64) ?RowCurvePoint {
+    const a_f: @Vector(2, f32) = @floatFromInt(l.a);
+    const b_f: @Vector(2, f32) = @floatFromInt(l.b);
+    const y_f: f32 = @floatFromInt(y);
+
+    if (l.b[1] == l.a[1]) return null;
+    const t = (y_f - a_f[1]) / (b_f[1] - a_f[1]);
+
+    if (!(t >= 0.0 and t <= 1.0)) {
+        return null;
+    }
+
+    const x = std.math.lerp(a_f[0], b_f[0], t);
+
+    const x_pos_i: i64 = @intFromFloat(@round(x));
+    const entering = l.a[1] < l.b[1];
+
+    return .{ .entering = entering, .x_pos = x_pos_i, .contour_id = l.contour_id };
+}
+
+fn bezierPoints(b: Segment.Bezier, y: i64) ?[2]?RowCurvePoint {
+    const a_f: @Vector(2, f32) = @floatFromInt(b.a);
+    const b_f: @Vector(2, f32) = @floatFromInt(b.b);
+    const c_f: @Vector(2, f32) = @floatFromInt(b.c);
+
+    const eps = 1e-7;
+
+    const t1, const t2 = findBezierTForY(a_f[1], b_f[1], c_f[1], @floatFromInt(y));
+    const part1: ?RowCurvePoint = brk: {
+        if (!(t1 >= 0.0 and t1 <= 1.0)) break :brk null;
+        const tangent_line = quadBezierTangentLine(a_f, b_f, c_f, t1);
+        // If we are at the apex, and at the very edge of a curve,
+        // we have to be careful. In this case we can only count
+        // one of the enter/exit events as we are only half of the
+        // parabola.
+        //
+        // U -> enter/exit
+        // \_ -> enter
+        // _/ -> exit
+        //  _
+        // / -> enter
+        // _
+        //  \-> exit
+
+        // The only special case is that we are at the apex, and at
+        // the end of the curve. In this case we only want to
+        // consider one of the two points. Otherwise we just ignore
+        // the apex as it's an immediate enter/exit. I.e. useless
+        //
+        // This boils down to the following condition
+        const at_apex = @abs(tangent_line.a[1] - tangent_line.b[1]) < eps;
+        const at_end = t1 < eps or @abs(t1 - 1.0) < eps;
+        const moving_up = tangent_line.a[1] < tangent_line.b[1] or b.a[1] < b.c[1];
+        if (at_apex and !at_end) break :brk null;
+
+        const x_f = sampleQuadBezierCurve(a_f, b_f, c_f, t1)[0];
+        const x_px: i64 = @intFromFloat(@round(x_f));
+        break :brk .{
+            .entering = moving_up,
+            .x_pos = x_px,
+            .contour_id = b.contour_id,
+        };
+    };
+    const part2: ?RowCurvePoint = brk: {
+        if (!(t2 >= 0.0 and t2 <= 1.0)) break :brk null;
+        const tangent_line = quadBezierTangentLine(a_f, b_f, c_f, t2);
+        const at_apex = @abs(tangent_line.a[1] - tangent_line.b[1]) < eps;
+        const moving_up = tangent_line.a[1] < tangent_line.b[1] or b.a[1] < b.c[1];
+        if (at_apex) break :brk null;
+        const x_f = sampleQuadBezierCurve(a_f, b_f, c_f, t2)[0];
+        const x_px: i64 = @intFromFloat(@round(x_f));
+        break :brk .{
+            .entering = moving_up,
+            .x_pos = x_px,
+            .contour_id = b.contour_id,
+        };
+    };
+    return .{
+        part1, part2,
+    };
+}
+
+pub fn findRowCurvePoints(curves: []const Segment, y: i64) !std.BoundedArray(Glyph.Segment.RowCurvePoint, 20) {
+    var array: std.BoundedArray(Glyph.Segment.RowCurvePoint, 20) = .{};
     for (curves) |curve| {
         switch (curve) {
-            .line => |l| {
-                const a_f: @Vector(2, f32) = @floatFromInt(l.a);
-                const b_f: @Vector(2, f32) = @floatFromInt(l.b);
-                const y_f: f32 = @floatFromInt(y);
-
-                if (l.b[1] == l.a[1]) continue;
-                const t = (y_f - a_f[1]) / (b_f[1] - a_f[1]);
-
-                if (!(t >= 0.0 and t <= 1.0)) {
-                    continue;
-                }
-
-                const x = std.math.lerp(a_f[0], b_f[0], t);
-
-                const x_pos_i: i64 = @intFromFloat(@round(x));
-                const entering = l.a[1] < l.b[1];
-
-                try ret.append(.{ .entering = entering, .x_pos = x_pos_i, .contour_id = l.contour_id });
-            },
-            .bezier => |b| {
-                const a_f: @Vector(2, f32) = @floatFromInt(b.a);
-                const b_f: @Vector(2, f32) = @floatFromInt(b.b);
-                const c_f: @Vector(2, f32) = @floatFromInt(b.c);
-
-                const ts = findBezierTForY(a_f[1], b_f[1], c_f[1], @floatFromInt(y));
-
-                for (ts, 0..) |t, i| {
-                    if (!(t >= 0.0 and t <= 1.0)) {
-                        continue;
-                    }
-                    const tangent_line = quadBezierTangentLine(a_f, b_f, c_f, t);
-
-                    const eps = 1e-7;
-                    const at_apex = @abs(tangent_line.a[1] - tangent_line.b[1]) < eps;
-                    const at_end = t < eps or @abs(t - 1.0) < eps;
-                    const moving_up = tangent_line.a[1] < tangent_line.b[1] or b.a[1] < b.c[1];
-
-                    // If we are at the apex, and at the very edge of a curve,
-                    // we have to be careful. In this case we can only count
-                    // one of the enter/exit events as we are only half of the
-                    // parabola.
-                    //
-                    // U -> enter/exit
-                    // \_ -> enter
-                    // _/ -> exit
-                    //  _
-                    // / -> enter
-                    // _
-                    //  \-> exit
-
-                    // The only special case is that we are at the apex, and at
-                    // the end of the curve. In this case we only want to
-                    // consider one of the two points. Otherwise we just ignore
-                    // the apex as it's an immediate enter/exit. I.e. useless
-                    //
-                    // This boils down to the following condition
-                    if (at_apex and (!at_end or i == 1)) continue;
-
-                    const x_f = sampleQuadBezierCurve(a_f, b_f, c_f, t)[0];
-                    const x_px: i64 = @intFromFloat(@round(x_f));
-                    try ret.append(.{
-                        .entering = moving_up,
-                        .x_pos = x_px,
-                        .contour_id = b.contour_id,
-                    });
-                }
+            .line => |l| try array.append(linePoints(l, y) orelse continue),
+            .bezier => |b| for (bezierPoints(b, y) orelse continue) |p| {
+                try array.append(p orelse continue);
             },
         }
     }
 
-    try sortRemoveDuplicateCurvePoints(alloc, &ret);
-
-    const real_ret = try alloc.alloc(RowCurvePoint, ret.items.len);
-    for (0..ret.items.len) |i| {
-        real_ret[i] = .{
-            .entering = ret.items[i].entering,
-            .x_pos = ret.items[i].x_pos,
-        };
-    }
-
-    return real_ret;
+    try sortRemoveDuplicateCurvePoints(&array);
+    return array;
 }
 
 const FPoint = @Vector(2, i16);
@@ -223,60 +236,52 @@ fn resolvePoint(maybe_off: Point, off: Point) FPoint {
     return (maybe_off.pos + off.pos) / FPoint{ 2, 2 };
 }
 
-const RowCurvePoint = struct {
+pub const RowCurvePoint = struct {
     x_pos: i64,
     entering: bool,
-    const Inner = struct {
-        x_pos: i64,
-        entering: bool,
-        contour_id: usize,
-
-        pub fn format(value: Inner, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-            try writer.print("{d} ({}, {})", .{ value.x_pos, value.entering, value.contour_id });
-        }
-    };
+    contour_id: usize = 0,
 
     pub fn format(value: RowCurvePoint, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{d} ({})", .{ value.x_pos, value.entering });
     }
 };
 
-fn sortRemoveDuplicateCurvePoints(alloc: Allocator, points: *std.ArrayList(RowCurvePoint.Inner)) !void {
-    var to_remove = std.ArrayList(usize).init(alloc);
-    defer to_remove.deinit();
-    for (0..points.items.len) |i| {
-        const next_idx = (i + 1) % points.items.len;
-        if (points.items[i].entering == points.items[next_idx].entering and points.items[i].contour_id == points.items[next_idx].contour_id) {
-            if (points.items[i].entering) {
-                if (points.items[i].x_pos > points.items[next_idx].x_pos) {
-                    try to_remove.append(i);
+fn sortRemoveDuplicateCurvePoints(points: *std.BoundedArray(RowCurvePoint, 20)) !void {
+    var buffer: [20]usize = undefined;
+    var to_remove: std.ArrayListUnmanaged(usize) = .initBuffer(&buffer);
+    for (0..points.slice().len) |i| {
+        const next_idx = (i + 1) % points.slice().len;
+        if (points.slice()[i].entering == points.slice()[next_idx].entering and points.slice()[i].contour_id == points.slice()[next_idx].contour_id) {
+            if (points.slice()[i].entering) {
+                if (points.slice()[i].x_pos > points.slice()[next_idx].x_pos) {
+                    to_remove.appendAssumeCapacity(i);
                 } else {
-                    try to_remove.append(next_idx);
+                    to_remove.appendAssumeCapacity(next_idx);
                 }
             } else {
-                if (points.items[i].x_pos > points.items[next_idx].x_pos) {
-                    try to_remove.append(next_idx);
+                if (points.slice()[i].x_pos > points.slice()[next_idx].x_pos) {
+                    to_remove.appendAssumeCapacity(next_idx);
                 } else {
-                    try to_remove.append(i);
+                    to_remove.appendAssumeCapacity(i);
                 }
             }
         }
     }
 
     while (to_remove.pop()) |i| {
-        if (points.items.len == 1) break;
+        if (points.slice().len == 1) break;
         _ = points.swapRemove(i);
     }
 
     const lessThan = struct {
-        fn f(_: void, lhs: RowCurvePoint.Inner, rhs: RowCurvePoint.Inner) bool {
+        fn f(_: void, lhs: RowCurvePoint, rhs: RowCurvePoint) bool {
             if (lhs.x_pos == rhs.x_pos) {
                 return lhs.entering and !rhs.entering;
             }
             return lhs.x_pos < rhs.x_pos;
         }
     }.f;
-    std.mem.sort(RowCurvePoint.Inner, points.items, {}, lessThan);
+    std.mem.sort(RowCurvePoint, points.slice(), {}, lessThan);
 }
 
 pub fn findBezierTForY(p1: f32, p2: f32, p3: f32, y: f32) [2]f32 {
@@ -348,13 +353,17 @@ test "find row points V" {
         .{ .line = .{ .a = .{ 0.0, 0.0 }, .b = .{ 1.0, 1.0 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 0);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 0);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(
         RowCurvePoint,
-        &.{ .{ .x_pos = 0, .entering = true }, .{ .x_pos = 0, .entering = false } },
-        points,
+        &.{
+            .{ .x_pos = 0, .entering = true },
+            .{ .x_pos = 0, .entering = false },
+        },
+        points.slice(),
     );
 }
 
@@ -367,13 +376,17 @@ test "find row points X" {
         .{ .line = .{ .a = .{ 10, 10 }, .b = .{ 5, 0 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 0);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 0);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(
         RowCurvePoint,
-        &.{ .{ .x_pos = -5, .entering = true }, .{ .x_pos = 5, .entering = false } },
-        points,
+        &.{
+            .{ .x_pos = -5, .entering = true },
+            .{ .x_pos = 5, .entering = false },
+        },
+        points.slice(),
     );
 }
 
@@ -396,13 +409,17 @@ test "find row points G" {
         .{ .line = .{ .a = .{ 10, 5 }, .b = .{ 10, -5 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 0);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 0);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(
         RowCurvePoint,
-        &.{ .{ .x_pos = 0, .entering = true }, .{ .x_pos = 10, .entering = false } },
-        points,
+        &.{
+            .{ .x_pos = 0, .entering = true },
+            .{ .x_pos = 10, .entering = false },
+        },
+        points.slice(),
     );
 }
 
@@ -416,13 +433,14 @@ test "find row points horizontal line into bezier cw" {
         .{ .line = .{ .a = .{ 369, 713 }, .b = .{ 369, 800 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 713);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 713);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(RowCurvePoint, &.{
         .{ .x_pos = 369, .entering = true },
         .{ .x_pos = 608, .entering = false },
-    }, points);
+    }, points.slice());
 }
 
 test "find row points bezier apex matching" {
@@ -433,13 +451,14 @@ test "find row points bezier apex matching" {
         .{ .bezier = .{ .a = .{ 743, 135 }, .b = .{ 829, 135 }, .c = .{ 916, 167 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 135);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 135);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(RowCurvePoint, &.{
         .{ .x_pos = 743, .entering = true },
         .{ .x_pos = 743, .entering = false },
-    }, points);
+    }, points.slice());
 }
 
 test "find row points ascending line segments" {
@@ -457,12 +476,13 @@ test "find row points ascending line segments" {
         .{ .line = .{ .a = .{ 1, 1 }, .b = .{ 2, 2 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 1);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 1);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(RowCurvePoint, &.{
         .{ .x_pos = 1, .entering = true },
-    }, points);
+    }, points.slice());
 }
 
 test "find row points bezier curve into line" {
@@ -479,13 +499,14 @@ test "find row points bezier curve into line" {
         .{ .line = .{ .a = .{ 1, 1 }, .b = .{ 1, 0 }, .contour_id = 0 } },
     };
 
-    const points = try findRowCurvePoints(std.testing.allocator, &curves, 1);
-    defer std.testing.allocator.free(points);
+    const points = try findRowCurvePoints(&curves, 1);
+    //defer std.testing.allocator.free(points);
 
+    //if (true) return error.SkipZigTest;
     try std.testing.expectEqualSlices(RowCurvePoint, &.{
         .{ .x_pos = 1, .entering = false },
         .{ .x_pos = 3, .entering = true },
-    }, points);
+    }, points.slice());
 }
 
 test "bezier solving" {
