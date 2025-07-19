@@ -7,8 +7,9 @@ pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const scanner = Scanner.create(b, .{});
+    const no_bin = b.option(bool, "no-bin", "do not emit binary") orelse false;
 
+    const scanner = Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
 
     // Pass the maximum version implemented by your wayland server or client.
@@ -37,7 +38,11 @@ pub fn build(b: *Build) !void {
     exe.linkLibC();
     exe.linkSystemLibrary("wayland-client");
 
-    b.installArtifact(exe);
+    if (no_bin) {
+        b.getInstallStep().dependOn(&exe.step);
+    } else {
+        b.installArtifact(exe);
+    }
 
     const run_cmd = b.addRunArtifact(exe);
 
