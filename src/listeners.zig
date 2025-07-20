@@ -1,3 +1,4 @@
+const debug_global = false;
 pub fn Listeners(T: type) type {
     return struct {
         pub fn registry(r: *wl.Registry, event: wl.Registry.Event, zm: *T) void {
@@ -12,6 +13,11 @@ pub fn Listeners(T: type) type {
                     } else if (orderZ(u8, global.interface, wl.Seat.interface.name) == .eq) {
                         zm.wayland.seat = r.bind(global.name, wl.Seat, 1) catch return;
                         zm.wayland.seat.?.setListener(*T, seat, zm);
+                    } else if (orderZ(u8, global.interface, Zwp.LinuxDmabufV1.interface.name) == .eq) {
+                        zm.wayland.dmabuf = r.bind(global.name, Zwp.LinuxDmabufV1, global.version) catch return;
+                        zm.wayland.dmabuf.?.setListener(*T, dmabufCb, zm);
+                    } else {
+                        if (debug_global) std.debug.print("extra global {s}\n", .{global.interface});
                     }
                 },
                 .global_remove => {},
@@ -31,6 +37,23 @@ pub fn Listeners(T: type) type {
                 .configure_bounds => |bounds| std.debug.print("toplevel bounds {}\n", .{bounds}),
                 .wm_capabilities => |caps| {
                     std.debug.print("toplevel caps {}\n", .{caps});
+                },
+            }
+        }
+
+        fn dmabufCb(_: *Zwp.LinuxDmabufV1, evt: Zwp.LinuxDmabufV1.Event, _: *T) void {
+            // Only sent in version 1
+            switch (evt) {
+                .format => |format| {
+                    // /include/uapi/drm/drm_fourcc.h
+                    const a: u8 = @truncate(format.format & 0xff);
+                    const b: u8 = @truncate((format.format >> 8) & 0xff);
+                    const c: u8 = @truncate((format.format >> 16) & 0xff);
+                    const d: u8 = @truncate((format.format >> 24) & 0xff);
+                    std.debug.print("dma format {} '{c}:{c}:{c}:{c}'\n", .{ format.format, a, b, c, d });
+                },
+                .modifier => |mod| {
+                    std.debug.print("dma modifier {}\n", .{mod});
                 },
             }
         }
@@ -75,7 +98,7 @@ pub fn Listeners(T: type) type {
         fn pointer(_: *wl.Pointer, evt: wl.Pointer.Event, zm: *T) void {
             switch (evt) {
                 .enter => |enter| {
-                    std.debug.print(
+                    if (false) std.debug.print(
                         "ptr enter x {d: <8} y {d: <8}\n",
                         .{ enter.surface_x.toInt(), enter.surface_y.toInt() },
                     );
@@ -112,3 +135,4 @@ const orderZ = std.mem.orderZ;
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const Xdg = wayland.client.xdg;
+const Zwp = wayland.client.zwp;

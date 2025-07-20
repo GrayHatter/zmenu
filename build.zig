@@ -11,6 +11,7 @@ pub fn build(b: *Build) !void {
 
     const scanner = Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+    scanner.addSystemProtocol("stable/linux-dmabuf/linux-dmabuf-v1.xml");
 
     // Pass the maximum version implemented by your wayland server or client.
     // Requests, events, enums, etc. from newer versions will not be generated,
@@ -22,6 +23,9 @@ pub fn build(b: *Build) !void {
     scanner.generate("wl_seat", 4);
     scanner.generate("wl_shm", 1);
     scanner.generate("xdg_wm_base", 7);
+    scanner.generate("zwp_linux_dmabuf_v1", 5);
+    //scanner.generate("zwp_linux_buffer_params_v1", 5);
+    //scanner.generate("zwp_linux_dmabuf_feedback_v1", 5);
     //scanner.generate("ext_session_lock_manager_v1", 1);
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });

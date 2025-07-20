@@ -6,13 +6,17 @@ pub const ZMenu = struct {
     pub const Wayland = struct {
         display: *wl.Display,
         registry: *wl.Registry,
-        shm: ?*wl.Shm = null,
+
         compositor: ?*wl.Compositor = null,
-        surface: ?*wl.Surface = null,
+        shm: ?*wl.Shm = null,
         wm_base: ?*Xdg.WmBase = null,
-        seat: ?*wl.Seat = null,
+        surface: ?*wl.Surface = null,
         xdgsurface: ?*Xdg.Surface = null,
         toplevel: ?*Xdg.Toplevel = null,
+
+        dmabuf: ?*Zwp.LinuxDmabufV1 = null,
+
+        seat: ?*wl.Seat = null,
         pointer: ?*wl.Pointer = null,
         keyboard: ?*wl.Keyboard = null,
 
@@ -41,6 +45,20 @@ pub const ZMenu = struct {
     pub fn initWayland(zm: *ZMenu) !void {
         zm.wayland.registry.setListener(*ZMenu, listeners.registry, zm);
         if (zm.wayland.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    }
+
+    pub fn initDmabuf(zm: *ZMenu) !void {
+        const dmabuf = zm.wayland.dmabuf orelse return error.NoDMABUF;
+        if (zm.wayland.surface) |surface| {
+            const feedback = try dmabuf.getSurfaceFeedback(surface);
+            std.debug.print("dma feedback {}\n", .{feedback});
+        } else {
+            const feedback = try dmabuf.getDefaultFeedback();
+            std.debug.print("dma feedback {}\n", .{feedback});
+        }
+        // TODO implement listener/processor
+
+        try zm.wayland.roundtrip();
     }
 
     /// I'm not a fan of this API either, but it lives here until I can decide
@@ -73,7 +91,7 @@ pub const ZMenu = struct {
     }
 
     pub fn newKeymap(_: *ZMenu, evt: wl.Keyboard.Event) void {
-        if (true) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
+        if (false) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
     }
 };
 
@@ -83,8 +101,26 @@ pub fn main() !void {
 
     var zm: ZMenu = try .init(alloc);
     try zm.initWayland();
+    try zm.wayland.roundtrip();
 
     const size = 900;
+
+    const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
+
+    const surface = try compositor.createSurface();
+    defer surface.destroy();
+    const wm_base = zm.wayland.wm_base orelse return error.NoXdgWmBase;
+    const xdg_surface = try wm_base.getXdgSurface(surface);
+    defer xdg_surface.destroy();
+    zm.wayland.toplevel = try xdg_surface.getToplevel(); //  orelse return error.NoToplevel;
+    defer zm.wayland.toplevel.?.destroy();
+
+    xdg_surface.setListener(*ZMenu, listeners.xdgSurface, &zm);
+    zm.wayland.toplevel.?.setListener(*ZMenu, listeners.xdgToplevel, &zm);
+    zm.wayland.toplevel.?.setMaxSize(size, size);
+    zm.wayland.toplevel.?.setMinSize(size, size);
+    surface.commit();
+    try zm.wayland.roundtrip();
 
     const shm = zm.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, size, size, "zmenu-buffer1");
@@ -105,24 +141,6 @@ pub fn main() !void {
 
     colors.drawCircleCentered(Buffer.ARGB, .radius(700, 100, 11), .cyan);
     colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
-
-    try zm.wayland.roundtrip();
-
-    const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
-
-    const surface = try compositor.createSurface();
-    defer surface.destroy();
-    const wm_base = zm.wayland.wm_base orelse return error.NoXdgWmBase;
-    const xdg_surface = try wm_base.getXdgSurface(surface);
-    defer xdg_surface.destroy();
-    zm.wayland.toplevel = try xdg_surface.getToplevel(); //  orelse return error.NoToplevel;
-    defer zm.wayland.toplevel.?.destroy();
-
-    xdg_surface.setListener(*ZMenu, listeners.xdgSurface, &zm);
-    zm.wayland.toplevel.?.setListener(*ZMenu, listeners.xdgToplevel, &zm);
-    zm.wayland.toplevel.?.setMaxSize(size, size);
-    zm.wayland.toplevel.?.setMinSize(size, size);
-    surface.commit();
     try zm.wayland.roundtrip();
 
     surface.attach(colors.buffer, 0, 0);
@@ -240,3 +258,4 @@ const Allocator = std.mem.Allocator;
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const Xdg = wayland.client.xdg;
+const Zwp = wayland.client.zwp;
