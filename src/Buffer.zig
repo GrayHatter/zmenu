@@ -37,6 +37,7 @@ pub const ARGB = enum(u32) {
     green = 0xff00ff00,
     blue = 0xff0000ff,
     purple = 0xffaa11ff, // I *feel* like this is more purpley
+    cyan = 0xff00ffff,
     _,
 
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
@@ -63,12 +64,20 @@ pub const Box = struct {
     w: usize,
     h: usize,
 
+    pub fn xy(x: usize, y: usize) Box {
+        return .{ .x = x, .y = y, .w = 0, .h = 0 };
+    }
+
     pub fn xywh(x: usize, y: usize, w: usize, h: usize) Box {
-        return .{ .w = w, .h = h, .x = x, .y = y };
+        return .{ .x = x, .y = y, .w = w, .h = h };
     }
 
     pub fn wh(w: usize, h: usize) Box {
         return .{ .w = w, .h = h, .x = 0, .y = 0 };
+    }
+
+    pub fn radius(x: usize, y: usize, r: usize) Box {
+        return .{ .x = x, .y = y, .w = r, .h = r };
     }
 };
 
@@ -128,7 +137,14 @@ pub fn drawRectangleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
     }
 }
 
-/// TODO add support for center vs corner alignment
+pub fn drawPoint(b: Buffer, T: type, box: Box, ecolor: T) void {
+    std.debug.assert(box.w < 2);
+    std.debug.assert(box.h < 2);
+    const color: u32 = @intFromEnum(ecolor);
+    const row = b.rowSlice(box.y);
+    row[box.x] = color;
+}
+
 pub fn drawCircle(b: Buffer, T: type, box: Box, ecolor: T) void {
     const color: u32 = @intFromEnum(ecolor);
     const half: f64 = @as(f64, @floatFromInt(box.w)) / 2.0 - 0.5;
@@ -138,7 +154,42 @@ pub fn drawCircle(b: Buffer, T: type, box: Box, ecolor: T) void {
             const dx: f64 = @as(f64, @floatFromInt(x)) - half;
             const dy: f64 = @as(f64, @floatFromInt(y)) - half;
             const pixel: f64 = hypot(dx, dy) - half + 0.5;
-            if (pixel <= 1.0) row[dst_x] = color;
+            if (pixel <= 1) row[dst_x] = color;
+        }
+    }
+}
+
+/// TODO add support for center vs corner alignment
+pub fn drawCircleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
+    const color: u32 = @intFromEnum(ecolor);
+    const half: f64 = @as(f64, @floatFromInt(box.w)) / 2.0 - 0.5;
+    for (box.y..box.y + box.w, 0..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        for (box.x..box.x + box.w, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - half;
+            const dy: f64 = @as(f64, @floatFromInt(y)) - half;
+            const pixel: f64 = hypot(dx, dy) - half + 0.5;
+            if (pixel < 1.5 and pixel > 0.5) row[dst_x] = color;
+        }
+    }
+}
+
+pub fn drawCircleCentered(b: Buffer, T: type, box: Box, ecolor: T) void {
+    std.debug.assert(box.h == box.w);
+    std.debug.assert(box.x > (box.w - 1) / 2);
+    std.debug.assert(box.y > (box.h - 1) / 2);
+    const color: u32 = @intFromEnum(ecolor);
+    const half: f64 = @as(f64, @floatFromInt(box.w)) / 2.0 - 0.5;
+    const adj_x: u32 = @truncate(box.x - @as(u32, @intFromFloat(@floor(half + 0.6))));
+    const adj_y: u32 = @truncate(box.y - @as(u32, @intFromFloat(@floor(half + 0.6))));
+
+    for (adj_y..adj_y + box.h, 0..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        for (adj_x..adj_x + box.w, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - half;
+            const dy: f64 = @as(f64, @floatFromInt(y)) - half;
+            const pixel: f64 = hypot(dx, dy) - half + 0.5;
+            if (pixel <= 1) row[dst_x] = color;
         }
     }
 }

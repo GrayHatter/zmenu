@@ -98,6 +98,14 @@ pub fn main() !void {
     colors.drawCircle(Buffer.ARGB, .xywh(200, 200, 50, 50), .purple);
     colors.drawCircle(Buffer.ARGB, .xywh(800, 100, 50, 50), .purple);
 
+    colors.drawCircleFill(Buffer.ARGB, .xywh(300, 200, 50, 50), .purple);
+    colors.drawCircleFill(Buffer.ARGB, .xywh(700, 100, 50, 50), .purple);
+
+    colors.drawPoint(Buffer.ARGB, .xy(300, 200), .black);
+
+    colors.drawCircleCentered(Buffer.ARGB, .radius(700, 100, 11), .cyan);
+    colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
+
     try zm.wayland.roundtrip();
 
     const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
