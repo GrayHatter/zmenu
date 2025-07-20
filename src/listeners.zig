@@ -5,16 +5,16 @@ pub fn Listeners(T: type) type {
             switch (event) {
                 .global => |global| {
                     if (orderZ(u8, global.interface, wl.Compositor.interface.name) == .eq) {
-                        zm.wayland.compositor = r.bind(global.name, wl.Compositor, 4) catch return;
+                        zm.wayland.compositor = r.bind(global.name, wl.Compositor, @min(global.version, wl.Compositor.generated_version)) catch return;
                     } else if (orderZ(u8, global.interface, wl.Shm.interface.name) == .eq) {
-                        zm.wayland.shm = r.bind(global.name, wl.Shm, 1) catch return;
+                        zm.wayland.shm = r.bind(global.name, wl.Shm, @min(global.version, wl.Shm.generated_version)) catch return;
                     } else if (orderZ(u8, global.interface, Xdg.WmBase.interface.name) == .eq) {
-                        zm.wayland.wm_base = r.bind(global.name, Xdg.WmBase, 1) catch return;
+                        zm.wayland.wm_base = r.bind(global.name, Xdg.WmBase, @min(global.version, Xdg.WmBase.generated_version)) catch return;
                     } else if (orderZ(u8, global.interface, wl.Seat.interface.name) == .eq) {
-                        zm.wayland.seat = r.bind(global.name, wl.Seat, 1) catch return;
+                        zm.wayland.seat = r.bind(global.name, wl.Seat, @min(global.version, wl.Seat.generated_version)) catch return;
                         zm.wayland.seat.?.setListener(*T, seat, zm);
                     } else if (orderZ(u8, global.interface, Zwp.LinuxDmabufV1.interface.name) == .eq) {
-                        zm.wayland.dmabuf = r.bind(global.name, Zwp.LinuxDmabufV1, global.version) catch return;
+                        zm.wayland.dmabuf = r.bind(global.name, Zwp.LinuxDmabufV1, @min(global.version, Zwp.LinuxDmabufV1.generated_version)) catch return;
                         zm.wayland.dmabuf.?.setListener(*T, dmabufCb, zm);
                     } else {
                         if (debug_global) std.debug.print("extra global {s}\n", .{global.interface});
