@@ -36,6 +36,7 @@ pub const ARGB = enum(u32) {
     red = 0xffff0000,
     green = 0xff00ff00,
     blue = 0xff0000ff,
+    purple = 0xffaa11ff, // I *feel* like this is more purpley
     _,
 
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
@@ -98,6 +99,50 @@ pub fn draw(b: Buffer, box: Box, src: []const u32) void {
     }
 }
 
+pub fn drawRectangle(b: Buffer, T: type, box: Box, ecolor: T) void {
+    const width = box.x + box.w;
+    const height = box.y + box.h;
+    const color: u32 = @intFromEnum(ecolor);
+    std.debug.assert(box.w > 3);
+    std.debug.assert(box.h > 3);
+    for (box.y + 1..height - 1) |y| {
+        const row = b.rowSlice(y);
+        row[box.x] = color;
+        row[width - 1] = color;
+    }
+    const top = b.rowSlice(box.y);
+    @memset(top[box.x..width], color);
+    const bottom = b.rowSlice(height - 1);
+    @memset(bottom[box.x..width], color);
+}
+
+pub fn drawRectangleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
+    const width = box.x + box.w;
+    const height = box.y + box.h;
+    const color: u32 = @intFromEnum(ecolor);
+    std.debug.assert(box.w > 3);
+    std.debug.assert(box.h > 3);
+    for (box.y..height) |y| {
+        const row = b.rowSlice(y);
+        @memset(row[box.x..width], color);
+    }
+}
+
+/// TODO add support for center vs corner alignment
+pub fn drawCircle(b: Buffer, T: type, box: Box, ecolor: T) void {
+    const color: u32 = @intFromEnum(ecolor);
+    const half: f64 = @as(f64, @floatFromInt(box.w)) / 2.0 - 0.5;
+    for (box.y..box.y + box.w, 0..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        for (box.x..box.x + box.w, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - half;
+            const dy: f64 = @as(f64, @floatFromInt(y)) - half;
+            const pixel: f64 = hypot(dx, dy) - half + 0.5;
+            if (pixel <= 1.0) row[dst_x] = color;
+        }
+    }
+}
+
 pub fn drawFont(b: Buffer, T: type, color: T, box: Box, src: []const u8) void {
     //std.debug.print("{}\n", .{box});
     for (0..box.h, box.y..) |sy, dy| {
@@ -140,3 +185,4 @@ const std = @import("std");
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const posix = std.posix;
+const hypot = std.math.hypot;

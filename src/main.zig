@@ -93,6 +93,11 @@ pub fn main() !void {
     defer colors.buffer.destroy();
     try drawColors(size, buffer, colors);
 
+    colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
+    colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
+    colors.drawCircle(Buffer.ARGB, .xywh(200, 200, 50, 50), .purple);
+    colors.drawCircle(Buffer.ARGB, .xywh(800, 100, 50, 50), .purple);
+
     try zm.wayland.roundtrip();
 
     const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
