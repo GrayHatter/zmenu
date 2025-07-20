@@ -167,10 +167,6 @@ pub fn main() !void {
     var glyph_cache: Glyph.Cache = .init(14);
     defer glyph_cache.raze(alloc);
 
-    var text: []const u8 = "i";
-    if (true) text = "this is some really long text, text that I HOPE will be longer than the surface width!";
-    try drawText(alloc, &glyph_cache, &buffer, text, ttf, 400, 100);
-
     var i: usize = 0;
     var draw_count: usize = 0;
     while (zm.running) {
@@ -196,7 +192,7 @@ pub fn main() !void {
         if (zm.key_buffer.items.len != draw_count) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
-            try drawBackground0(buffer, .wh(300, 900));
+            try drawBackground0(buffer, .wh(900, 300));
             try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, size, 150);
@@ -227,8 +223,6 @@ fn drawText(
     };
 
     for (tl.glyphs) |g| {
-        //const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
-        //const canvas, _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
         const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(@as(i32, @intCast(x)) + g.pixel_x1),
@@ -255,9 +249,9 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
 }
 
 fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
-    for (box.x..box.x2()) |x| for (box.y..box.h) |y| {
-        const r_x: usize = @intCast(x * 0xff / buf.width);
+    for (box.y..box.y2()) |y| for (box.x..box.x2()) |x| {
         const r_y: usize = @intCast(y * 0xff / buf.width);
+        const r_x: usize = @intCast(x * 0xff / buf.width);
         const r: u8 = @intCast(r_x & 0xfe);
         const g: u8 = @intCast(r_y & 0xfe);
         const b: u8 = 0xff - g;

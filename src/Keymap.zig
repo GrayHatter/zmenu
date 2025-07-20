@@ -27,7 +27,7 @@ pub fn initFd(fd: anytype, size: u32) !Keymap {
         0,
     ) catch unreachable;
 
-    std.debug.print("{s}\n", .{data});
+    if (false) std.debug.print("{s}\n", .{data});
     _ = try parse(data);
     return .{};
 }
