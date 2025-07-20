@@ -55,22 +55,19 @@ pub fn Listeners(T: type) type {
             switch (evt) {
                 .key => |key| switch (key.key) {
                     1 => zm.end(),
-                    else => std.debug.print(
-                        "key {s} event other {}\n",
-                        .{ if (key.state == .pressed) "down" else "up  ", key.key },
-                    ),
+                    else => zm.wlEvent(.{ .key = evt }),
                 },
                 .keymap => zm.newKeymap(evt),
                 .modifiers => |mods| {
                     if (mods.mods_depressed > 0) {
-                        std.debug.print("keymods {}\n", .{mods});
+                        //std.debug.print("keymods {}\n", .{mods});
                     }
                 },
                 .enter => {},
                 .leave => {},
                 //.repeat_info => {},
                 else => {
-                    std.debug.print("keyevent {}\n", .{evt});
+                    std.debug.print("keyevent other {}\n", .{evt});
                 },
             }
         }

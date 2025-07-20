@@ -1,4 +1,8 @@
 pub const ZMenu = struct {
+    wayland: Wayland,
+    running: bool = true,
+    key_buffer: std.ArrayListUnmanaged(u8),
+
     pub const Wayland = struct {
         display: *wl.Display,
         registry: *wl.Registry,
@@ -17,10 +21,12 @@ pub const ZMenu = struct {
         }
     };
 
-    wayland: Wayland,
-    running: bool = true,
+    pub const Event = union(enum) {
+        key: wl.Keyboard.Event,
+        pointer: wl.Pointer.Event,
+    };
 
-    pub fn init() !ZMenu {
+    pub fn init(a: Allocator) !ZMenu {
         const display = try wl.Display.connect(null);
         const registry = try display.getRegistry();
         return .{
@@ -28,12 +34,34 @@ pub const ZMenu = struct {
                 .display = display,
                 .registry = registry,
             },
+            .key_buffer = try .initCapacity(a, 100),
         };
     }
 
     pub fn initWayland(zm: *ZMenu) !void {
         zm.wayland.registry.setListener(*ZMenu, listeners.registry, zm);
         if (zm.wayland.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    }
+
+    /// I'm not a fan of this API either, but it lives here until I can decide
+    /// where it belongs.
+    pub fn wlEvent(zm: *ZMenu, event: Event) void {
+        switch (event) {
+            .key => |k| switch (k) {
+                .key => |key| switch (key.state) {
+                    .pressed => {
+                        // todo bounds checking
+                        zm.key_buffer.appendAssumeCapacity(@truncate(key.key));
+                    },
+                    .released => {},
+                    else => |unk| {
+                        std.debug.print("unexpected keyboard key state {} \n", .{unk});
+                    },
+                },
+                else => {},
+            },
+            .pointer => |_| {},
+        }
     }
 
     pub fn end(zm: *ZMenu) void {
@@ -50,7 +78,10 @@ pub const ZMenu = struct {
 };
 
 pub fn main() !void {
-    var zm: ZMenu = try .init();
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    const alloc = gpa.allocator();
+
+    var zm: ZMenu = try .init(alloc);
     try zm.initWayland();
 
     const size = 900;
@@ -87,8 +118,6 @@ pub fn main() !void {
 
     //zm.wayland.toplevel.?.setMaxSize(size, size);
 
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    const alloc = gpa.allocator();
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
@@ -98,9 +127,10 @@ pub fn main() !void {
 
     var text: []const u8 = "i";
     if (true) text = "this is some really long text, text that I HOPE will be longer than the surface width!";
-    try drawText(alloc, &glyph_cache, &buffer, text, ttf);
+    try drawText(alloc, &glyph_cache, &buffer, text, ttf, 400, 100);
 
     var i: usize = 0;
+    var draw_count: usize = 0;
     while (zm.running) {
         switch (zm.wayland.display.dispatch()) {
             .SUCCESS => {},
@@ -121,10 +151,23 @@ pub fn main() !void {
                 surface.commit();
             }
         }
+        if (zm.key_buffer.items.len > draw_count) {
+            @branchHint(.unlikely);
+            draw_count = zm.key_buffer.items.len;
+            try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
+        }
     }
 }
 
-fn drawText(alloc: Allocator, cache: *Glyph.Cache, buffer: *const Buffer, text: []const u8, ttf: Ttf) !void {
+fn drawText(
+    alloc: Allocator,
+    cache: *Glyph.Cache,
+    buffer: *const Buffer,
+    text: []const u8,
+    ttf: Ttf,
+    x: u32,
+    y: u32,
+) !void {
     var layout_helper = LayoutHelper.init(alloc, text, ttf, 512, 14);
     defer layout_helper.glyphs.deinit();
     while (try layout_helper.step(ttf)) {}
@@ -142,8 +185,8 @@ fn drawText(alloc: Allocator, cache: *Glyph.Cache, buffer: *const Buffer, text: 
         //const canvas, _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
         const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
-            @intCast(400 + g.pixel_x1),
-            @intCast(100 - g.pixel_y1),
+            @intCast(@as(i32, @intCast(x)) + g.pixel_x1),
+            @intCast(@as(i32, @intCast(y)) - g.pixel_y1),
             @intCast(canvas.width),
             @intCast(canvas.height),
         ), canvas.pixels);
