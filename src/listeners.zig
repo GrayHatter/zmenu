@@ -5,7 +5,7 @@ pub fn Listeners(T: type) type {
             switch (event) {
                 .global => |global| {
                     if (orderZ(u8, global.interface, wl.Compositor.interface.name) == .eq) {
-                        zm.wayland.compositor = r.bind(global.name, wl.Compositor, 1) catch return;
+                        zm.wayland.compositor = r.bind(global.name, wl.Compositor, 4) catch return;
                     } else if (orderZ(u8, global.interface, wl.Shm.interface.name) == .eq) {
                         zm.wayland.shm = r.bind(global.name, wl.Shm, 1) catch return;
                     } else if (orderZ(u8, global.interface, Xdg.WmBase.interface.name) == .eq) {

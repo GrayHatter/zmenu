@@ -1,5 +1,6 @@
 pub const ZMenu = struct {
     wayland: Wayland,
+    keymap: Keymap = .{},
     running: bool = true,
     key_buffer: std.ArrayListUnmanaged(u8),
 
@@ -69,7 +70,12 @@ pub const ZMenu = struct {
                 .key => |key| switch (key.state) {
                     .pressed => {
                         // todo bounds checking
-                        zm.key_buffer.appendAssumeCapacity(@truncate(key.key));
+                        if (zm.keymap.ascii(key.key)) |c| {
+                            zm.key_buffer.appendAssumeCapacity(c);
+                        } else switch (zm.keymap.ctrl(key.key)) {
+                            .backspace => _ = zm.key_buffer.pop(),
+                            else => {},
+                        }
                     },
                     .released => {},
                     else => |unk| {
@@ -90,8 +96,13 @@ pub const ZMenu = struct {
         if (false) std.debug.print("toplevel conf {}\n", .{evt});
     }
 
-    pub fn newKeymap(_: *ZMenu, evt: wl.Keyboard.Event) void {
+    pub fn newKeymap(zm: *ZMenu, evt: wl.Keyboard.Event) void {
         if (false) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
+        if (Keymap.initFd(evt.keymap.fd, evt.keymap.size)) |km| {
+            zm.keymap = km;
+        } else |_| {
+            // TODO don't ignore error
+        }
     }
 };
 
@@ -182,10 +193,14 @@ pub fn main() !void {
                 surface.commit();
             }
         }
-        if (zm.key_buffer.items.len > draw_count) {
+        if (zm.key_buffer.items.len != draw_count) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
+            try drawBackground0(buffer, .wh(300, 900));
             try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
+            surface.attach(buffer.buffer, 0, 0);
+            surface.damageBuffer(0, 0, size, 150);
+            surface.commit();
         }
     }
 }
@@ -239,6 +254,18 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
     };
 }
 
+fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
+    for (box.x..box.x2()) |x| for (box.y..box.h) |y| {
+        const r_x: usize = @intCast(x * 0xff / buf.width);
+        const r_y: usize = @intCast(y * 0xff / buf.width);
+        const r: u8 = @intCast(r_x & 0xfe);
+        const g: u8 = @intCast(r_y & 0xfe);
+        const b: u8 = 0xff - g;
+        const c = Buffer.ARGB.rgb(r, g, b);
+        buf.drawPoint(Buffer.ARGB, .xy(x, y), c);
+    };
+}
+
 test {
     _ = &Buffer;
     _ = &LayoutHelper;
@@ -252,6 +279,7 @@ const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
 const listeners = @import("listeners.zig").Listeners(ZMenu);
+const Keymap = @import("Keymap.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

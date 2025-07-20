@@ -1,7 +1,7 @@
 buffer: *wl.Buffer,
 raw: []u32,
-w: u32,
-h: u32,
+width: u32,
+height: u32,
 
 const Buffer = @This();
 
@@ -64,6 +64,14 @@ pub const Box = struct {
     w: usize,
     h: usize,
 
+    pub inline fn x2(b: Box) usize {
+        return b.x + b.w;
+    }
+
+    pub inline fn y2(b: Box) usize {
+        return b.y + b.h;
+    }
+
     pub fn xy(x: usize, y: usize) Box {
         return .{ .x = x, .y = y, .w = 0, .h = 0 };
     }
@@ -86,8 +94,8 @@ pub fn init(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !Buffer {
     return .{
         .buffer = buffer,
         .raw = raw,
-        .w = width,
-        .h = height,
+        .width = width,
+        .height = height,
     };
 }
 
@@ -96,7 +104,7 @@ pub fn raze(b: Buffer) void {
 }
 
 fn rowSlice(b: Buffer, y: usize) []u32 {
-    return b.raw[b.w * y ..][0..b.w];
+    return b.raw[b.width * y ..][0..b.width];
 }
 
 pub fn draw(b: Buffer, box: Box, src: []const u32) void {
