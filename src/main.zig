@@ -210,7 +210,11 @@ pub fn main() !void {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
             try drawBackground0(buffer, .wh(900, 300));
-            try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
+            if (draw_count > 0) {
+                buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .parchment);
+                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .bittersweet_shimmer);
+                try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
+            }
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, size, 150);
             surface.commit();
