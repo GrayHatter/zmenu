@@ -4,10 +4,11 @@ const Keymap = @This();
 
 pub const Control = enum(u16) {
     escape = 1,
-    shift_left = 42, // Left Shift
-    shift_right = 54, // Right Shift
-    backspace = 14, // Backspace
-    enter = 28, // Enter
+    shift_left = 42,
+    shift_right = 54,
+    backspace = 14,
+    enter = 28,
+    meta = 125,
     ascii_char,
 
     UNKNOWN = 0,
@@ -93,6 +94,8 @@ pub fn ascii(_: Keymap, key: u32) ?u8 {
         54 => null, // Right Shift
         14 => null, // Backspace
         28 => null, // Enter
+        125 => null, // Meta
+        1 => null, // Escape
         else => {
             std.debug.print("Unable to translate ascii {}\n", .{key});
             return null;
@@ -107,8 +110,10 @@ pub fn ctrl(_: Keymap, key: u32) Control {
         54 => .shift_right, // Right Shift
         14 => .backspace, // Backspace
         28 => .enter, // Enter
+        125 => .meta, // Meta
+        1 => .escape,
         else => {
-            std.debug.print("Unable to translate ascii {}\n", .{key});
+            std.debug.print("Unable to translate  ctrl {}\n", .{key});
             return .UNKNOWN;
         },
     };

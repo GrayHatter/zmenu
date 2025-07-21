@@ -34,10 +34,11 @@ pub const ZMenu = struct {
             w.toplevel = try w.xdgsurface.?.getToplevel(); //  orelse return error.NoToplevel;
             w.xdgsurface.?.setListener(*ZMenu, listeners.xdgSurfaceEvent, parent);
             w.toplevel.?.setListener(*ZMenu, listeners.xdgToplevelEvent, parent);
-            w.toplevel.?.setMaxSize(@intCast(box.w), @intCast(box.h));
-            w.toplevel.?.setMinSize(@intCast(box.w), @intCast(box.h));
-            w.surface.?.commit();
-            try w.roundtrip();
+
+            w.resize(box) catch {
+                // Resizing is optional, but the round trip is not
+                try w.roundtrip();
+            };
         }
 
         pub fn raze(w: *Wayland) void {
@@ -48,6 +49,15 @@ pub const ZMenu = struct {
 
         pub fn roundtrip(w: *Wayland) !void {
             if (w.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+        }
+
+        pub fn resize(w: *Wayland, box: Buffer.Box) !void {
+            if (w.toplevel) |tl| {
+                tl.setMaxSize(@intCast(box.w), @intCast(box.h));
+                tl.setMinSize(@intCast(box.w), @intCast(box.h));
+            }
+            if (w.surface) |s| s.commit();
+            try w.roundtrip();
         }
     };
 
@@ -106,7 +116,7 @@ pub const ZMenu = struct {
                                 }
                                 zm.key_buffer.clearRetainingCapacity();
                             },
-
+                            .escape => zm.end(),
                             else => {},
                         }
                     },
@@ -122,11 +132,19 @@ pub const ZMenu = struct {
     }
 
     pub fn end(zm: *ZMenu) void {
-        zm.running = false;
+        if (zm.key_buffer.items.len > 0) {
+            zm.key_buffer.clearRetainingCapacity();
+        } else zm.running = false;
     }
 
     pub fn configure(_: *ZMenu, evt: Xdg.Toplevel.Event) void {
-        if (false) std.debug.print("toplevel conf {}\n", .{evt});
+        const debug = false;
+        switch (evt) {
+            .configure => |conf| if (debug) std.debug.print("toplevel conf {}\n", .{conf}),
+            .configure_bounds => |bounds| if (debug) std.debug.print("toplevel bounds {}\n", .{bounds}),
+            .wm_capabilities => |caps| if (debug) std.debug.print("toplevel caps {}\n", .{caps}),
+            .close => unreachable,
+        }
     }
 
     pub fn newKeymap(zm: *ZMenu, evt: wl.Keyboard.Event) void {
@@ -206,11 +224,10 @@ pub fn main() !void {
         if (zm.key_buffer.items.len != draw_count) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
-            //try drawBackground0(buffer, .wh(900, 300));
+            buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .ash_gray);
+            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .hookers_green);
+            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .hookers_green);
             if (draw_count > 0) {
-                buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .ash_gray);
-                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .hookers_green);
-                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .hookers_green);
                 try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
             }
             surface.attach(buffer.buffer, 0, 0);

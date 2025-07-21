@@ -32,12 +32,8 @@ pub fn Listeners(T: type) type {
 
         pub fn xdgToplevelEvent(_: *Xdg.Toplevel, event: Xdg.Toplevel.Event, zm: *T) void {
             switch (event) {
-                .configure => zm.configure(event),
                 .close => zm.end(),
-                .configure_bounds => |bounds| std.debug.print("toplevel bounds {}\n", .{bounds}),
-                .wm_capabilities => |caps| {
-                    if (debug_wl) std.debug.print("toplevel caps {}\n", .{caps});
-                },
+                .configure_bounds, .wm_capabilities, .configure => zm.configure(event),
             }
         }
 
@@ -76,10 +72,7 @@ pub fn Listeners(T: type) type {
 
         fn keyEvent(_: *wl.Keyboard, evt: wl.Keyboard.Event, zm: *T) void {
             switch (evt) {
-                .key => |key| switch (key.key) {
-                    1 => zm.end(),
-                    else => zm.wlEvent(.{ .key = evt }),
-                },
+                .key => zm.wlEvent(.{ .key = evt }),
                 .keymap => zm.newKeymap(evt),
                 .modifiers => |mods| {
                     if (mods.mods_depressed > 0) {
