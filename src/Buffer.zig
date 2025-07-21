@@ -155,9 +155,10 @@ pub fn drawRectangleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
     }
 }
 
-pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, radius: usize, ecolor: T) void {
-    const r: f64 = @as(f64, @floatFromInt(radius)) - 0.5;
+pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, base_r: f64, ecolor: T) void {
+    const r: f64 = base_r - 0.5;
     const color: u32 = @intFromEnum(ecolor);
+    const radius: usize = @intFromFloat(base_r);
     std.debug.assert(box.w > radius);
     std.debug.assert(box.h > radius);
     for (box.y..box.y + radius, 0..) |dst_y, y| {
@@ -165,13 +166,13 @@ pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, radius: usize, ecolor:
         const dy: f64 = @as(f64, @floatFromInt(y)) - r;
         for (box.x..box.x + radius, 0..) |dst_x, x| {
             const dx: f64 = @as(f64, @floatFromInt(x)) - r;
-            const pixel: f64 = hypot(dx, dy) - r;
-            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
+            if (pixel <= 1.0 and pixel >= 0.0) row[dst_x] = color;
         }
         for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
-            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
-            const pixel: f64 = hypot(dx, dy) - r;
-            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
+            if (pixel <= 1.0 and pixel >= 0.0) row[dst_x] = color;
         }
     }
 
@@ -180,13 +181,13 @@ pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, radius: usize, ecolor:
         const dy: f64 = @as(f64, @floatFromInt(y)) - r;
         for (box.x..box.x + radius, 0..) |dst_x, x| {
             const dx: f64 = @as(f64, @floatFromInt(x)) - r;
-            const pixel: f64 = hypot(dx, dy) - r;
-            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
+            if (pixel <= 1.0 and pixel >= 0.0) row[dst_x] = color;
         }
         for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
-            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
-            const pixel: f64 = hypot(dx, dy) - r;
-            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
+            if (pixel <= 1.0 and pixel >= 0.0) row[dst_x] = color;
         }
     }
 
@@ -201,8 +202,9 @@ pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, radius: usize, ecolor:
     @memset(bottom[box.x + radius .. box.x2() - radius], color);
 }
 
-pub fn drawRectangleRoundedFill(b: Buffer, T: type, box: Box, radius: usize, ecolor: T) void {
-    const r: f64 = @as(f64, @floatFromInt(radius)) - 0.5;
+pub fn drawRectangleRoundedFill(b: Buffer, T: type, box: Box, base_r: f64, ecolor: T) void {
+    const r: f64 = base_r - 0.5;
+    const radius: usize = @intFromFloat(base_r);
     const color: u32 = @intFromEnum(ecolor);
     std.debug.assert(box.w > radius);
     std.debug.assert(box.h > radius);
@@ -211,12 +213,12 @@ pub fn drawRectangleRoundedFill(b: Buffer, T: type, box: Box, radius: usize, eco
         const dy: f64 = @as(f64, @floatFromInt(y)) - r;
         for (box.x..box.x + radius, 0..) |dst_x, x| {
             const dx: f64 = @as(f64, @floatFromInt(x)) - r;
-            const pixel: f64 = hypot(dx, dy) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
             if (pixel <= 1.0) row[dst_x] = color;
         }
         for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
             const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
-            const pixel: f64 = hypot(dx, dy) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
             if (pixel <= 1.0) row[dst_x] = color;
         }
         @memset(row[box.x + radius .. box.x2() - radius], color);
@@ -227,12 +229,12 @@ pub fn drawRectangleRoundedFill(b: Buffer, T: type, box: Box, radius: usize, eco
         const dy: f64 = @as(f64, @floatFromInt(y)) - r;
         for (box.x..box.x + radius, 0..) |dst_x, x| {
             const dx: f64 = @as(f64, @floatFromInt(x)) - r;
-            const pixel: f64 = hypot(dx, dy) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
             if (pixel < 1.0) row[dst_x] = color;
         }
         for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
-            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
-            const pixel: f64 = hypot(dx, dy) - r;
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r + 0.6;
             if (pixel < 1.0) row[dst_x] = color;
         }
         @memset(row[box.x + radius .. box.x2() - radius], color);
