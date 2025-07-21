@@ -62,7 +62,7 @@ pub fn build(b: *Build) !void {
     {
         // test font
         const text_mod = b.createModule(.{
-            .root_source_file = b.path("src/text_test.zig"),
+            .root_source_file = b.path("src/gui_demo.zig"),
             .target = target,
             .optimize = optimize,
         });
