@@ -1,94 +1,29 @@
-pub const ZMenu = struct {
-    pub const Wayland = struct {
-        display: *wl.Display,
-        registry: *wl.Registry,
-        shm: ?*wl.Shm = null,
-        compositor: ?*wl.Compositor = null,
-        surface: ?*wl.Surface = null,
-        wm_base: ?*Xdg.WmBase = null,
-        seat: ?*wl.Seat = null,
-        xdgsurface: ?*Xdg.Surface = null,
-        toplevel: ?*Xdg.Toplevel = null,
-        pointer: ?*wl.Pointer = null,
-        keyboard: ?*wl.Keyboard = null,
-
-        pub fn roundtrip(w: *Wayland) !void {
-            if (w.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-        }
-    };
-
-    wayland: Wayland,
-    running: bool = true,
-
-    pub fn init() !ZMenu {
-        const display = try wl.Display.connect(null);
-        const registry = try display.getRegistry();
-        return .{
-            .wayland = .{
-                .display = display,
-                .registry = registry,
-            },
-        };
-    }
-
-    pub fn initWayland(zm: *ZMenu) !void {
-        zm.wayland.registry.setListener(*ZMenu, listeners.registry, zm);
-        if (zm.wayland.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-    }
-
-    pub fn end(zm: *ZMenu) void {
-        zm.running = false;
-    }
-
-    pub fn configure(_: *ZMenu, evt: Xdg.Toplevel.Event) void {
-        if (false) std.debug.print("toplevel conf {}\n", .{evt});
-    }
-
-    pub fn newKeymap(_: *ZMenu, evt: wl.Keyboard.Event) void {
-        if (true) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
-    }
-};
-
 pub fn main() !void {
-    var zm: ZMenu = try .init();
-    try zm.initWayland();
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    const alloc = gpa.allocator();
 
-    const size = 900;
+    var zm: ZMenu = try .init(alloc);
+    const box: Buffer.Box = .wh(1000, 1000);
+
+    try zm.wayland.init(box);
+    defer zm.raze(alloc);
 
     const shm = zm.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, size, size, "zmenu-buffer1");
+    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
-    const colors: Buffer = try .init(shm, size, size, "zmenu-buffer2");
+    const colors: Buffer = try .init(shm, box, "zmenu-buffer2");
     defer colors.buffer.destroy();
-    try drawColors(size, buffer, colors);
+    try drawColors(box.w, buffer, colors);
 
     try zm.wayland.roundtrip();
 
-    const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
-
-    const surface = try compositor.createSurface();
-    defer surface.destroy();
-    const wm_base = zm.wayland.wm_base orelse return error.NoXdgWmBase;
-    const xdg_surface = try wm_base.getXdgSurface(surface);
-    defer xdg_surface.destroy();
-    zm.wayland.toplevel = try xdg_surface.getToplevel(); //  orelse return error.NoToplevel;
-    defer zm.wayland.toplevel.?.destroy();
-
-    xdg_surface.setListener(*ZMenu, listeners.xdgSurface, &zm);
-    zm.wayland.toplevel.?.setListener(*ZMenu, listeners.xdgToplevel, &zm);
-    zm.wayland.toplevel.?.setMaxSize(size, size);
-    zm.wayland.toplevel.?.setMinSize(size, size);
-    surface.commit();
-    try zm.wayland.roundtrip();
-
+    const surface = zm.wayland.surface orelse return error.NoSurface;
     surface.attach(colors.buffer, 0, 0);
     surface.commit();
     try zm.wayland.roundtrip();
 
     //zm.wayland.toplevel.?.setMaxSize(size, size);
 
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    const alloc = gpa.allocator();
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
@@ -116,6 +51,16 @@ pub fn main() !void {
     colors.drawRectangleRounded(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .bittersweet_shimmer);
     colors.drawRectangleRounded(Buffer.ARGB, .xywh(41, 601, 298, 38), 9, .bittersweet_shimmer);
 
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(130, 110, 200, 50), .blue);
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 100, 200, 50), .red);
+    buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 110, 200, 50), .alpha(.blue, 0xc8));
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 100, 100, 50), @enumFromInt(0xffff00ff));
+
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(130, 810, 200, 50), .blue);
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 800, 200, 50), .red);
+    buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 810, 200, 50), .alpha(.blue, 0x88));
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 800, 100, 50), .hex(0xffff00ff));
+
     var i: usize = 0;
     while (zm.running) {
         switch (zm.wayland.display.dispatch()) {
@@ -129,11 +74,11 @@ pub fn main() !void {
         if (i % 100 == 0) {
             if (i / 100 & 1 > 0) {
                 surface.attach(colors.buffer, 0, 0);
-                surface.damage(0, 0, size, size);
+                surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
                 surface.commit();
             } else {
                 surface.attach(buffer.buffer, 0, 0);
-                surface.damage(0, 0, size, size);
+                surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
                 surface.commit();
             }
         }
@@ -236,6 +181,7 @@ const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const listeners = @import("listeners.zig").Listeners(ZMenu);
+const ZMenu = @import("ZMenu.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

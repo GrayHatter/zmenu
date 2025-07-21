@@ -74,7 +74,7 @@ pub fn build(b: *Build) !void {
         test_text.linkSystemLibrary("wayland-client");
 
         const text_run_cmd = b.addRunArtifact(test_text);
-        const text_run_step = b.step("test-text", "Run text test app");
+        const text_run_step = b.step("demo", "Run gui demo test thing");
         text_run_step.dependOn(&text_run_cmd.step);
     }
 }

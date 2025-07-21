@@ -51,6 +51,13 @@ pub const ARGB = enum(u32) {
 
     _,
 
+    pub const MASK = struct {
+        pub const A = 0xff000000;
+        pub const R = 0x00ff0000;
+        pub const G = 0x0000ff00;
+        pub const B = 0x000000ff;
+    };
+
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
         const color: u32 = (0xff000000 |
             @as(u32, r) << 16 |
@@ -64,6 +71,10 @@ pub const ARGB = enum(u32) {
         return @intFromEnum(color);
     }
 
+    pub fn hex(i: u32) ARGB {
+        return @enumFromInt(i);
+    }
+
     pub fn fromBytes(bytes: [4]u8) ARGB {
         return @enumFromInt(@as(*align(1) const u32, @ptrCast(&bytes)).*);
     }
@@ -72,6 +83,24 @@ pub const ARGB = enum(u32) {
         const color: u32 = @intFromEnum(src);
         const mask: u32 = 0x00ffffff | (@as(u32, trans) << 24);
         return @enumFromInt(color & mask);
+    }
+
+    pub fn mix(src: ARGB, dest: *u32) void {
+        const alp: u32 = (src.int() & MASK.A) >> 24;
+        const red: u32 = (src.int() & MASK.R) >> 16;
+        const gre: u32 = (src.int() & MASK.G) >> 8;
+        const blu: u32 = (src.int() & MASK.B) >> 0;
+
+        const r: u32 = (dest.* & MASK.R) >> 16;
+        const g: u32 = (dest.* & MASK.G) >> 8;
+        const b: u32 = (dest.* & MASK.B) >> 0;
+
+        //aOut = aA + (aB * (255 - aA) / 255);
+        const color: u32 = 0xff000000 |
+            (((red * alp + r * (0xff - alp)) / (0xff * 1)) << 0x10 & MASK.R) |
+            (((gre * alp + g * (0xff - alp)) / (0xff * 1)) << 0x08 & MASK.G) |
+            (((blu * alp + b * (0xff - alp)) / (0xff * 1)) << 0x00 & MASK.B);
+        dest.* = color;
     }
 };
 
@@ -166,6 +195,20 @@ pub fn drawRectangleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
     for (box.y..height) |y| {
         const row = b.rowSlice(y);
         @memset(row[box.x..width], color);
+    }
+}
+
+pub fn drawRectangleFillMix(b: Buffer, T: type, box: Box, ecolor: T) void {
+    //const width = box.x + box.w;
+    const height = box.y + box.h;
+    //const color: u32 = @intFromEnum(ecolor);
+    std.debug.assert(box.w > 3);
+    std.debug.assert(box.h > 3);
+    for (box.y..height) |y| {
+        const row = b.rowSlice(y);
+        for (box.x..box.x2()) |x| {
+            ecolor.mix(&row[x]);
+        }
     }
 }
 
