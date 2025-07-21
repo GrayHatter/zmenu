@@ -140,10 +140,15 @@ pub const ZMenu = struct {
 };
 
 fn exec(cmd: []const u8) !noreturn {
-    if (cmd[0] != '/') return error.InvalidArg0;
+    var argv = cmd;
+    var argv_buf: [2048]u8 = undefined;
+    if (cmd[0] != '/') {
+        argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
+    }
+
     std.process.execve(
         std.heap.page_allocator,
-        &[1][]const u8{cmd},
+        &[1][]const u8{argv},
         null,
     ) catch @panic("oopsies");
 }
