@@ -215,6 +215,7 @@ pub fn main() !void {
             if (draw_count > 0) {
                 buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .parchment);
                 buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .bittersweet_shimmer);
+                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .bittersweet_shimmer);
                 try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
             }
             surface.attach(buffer.buffer, 0, 0);
