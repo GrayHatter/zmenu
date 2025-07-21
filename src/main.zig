@@ -161,6 +161,13 @@ pub fn main() !void {
 
     colors.drawCircleCentered(Buffer.ARGB, .radius(700, 100, 11), .cyan);
     colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
+
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 300, 200, 50), 10, .red);
+    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .parchment);
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .bittersweet_shimmer);
+    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .parchment);
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .bittersweet_shimmer);
+
     try zm.wayland.roundtrip();
 
     const surface = zm.wayland.surface orelse return error.NoSurface;

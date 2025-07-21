@@ -38,6 +38,8 @@ pub const ARGB = enum(u32) {
     blue = 0xff0000ff,
     purple = 0xffaa11ff, // I *feel* like this is more purpley
     cyan = 0xff00ffff,
+    bittersweet_shimmer = 0xffbc4749,
+    parchment = 0xfff2e8cf,
     _,
 
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
@@ -143,6 +145,99 @@ pub fn drawRectangleFill(b: Buffer, T: type, box: Box, ecolor: T) void {
         const row = b.rowSlice(y);
         @memset(row[box.x..width], color);
     }
+}
+
+pub fn drawRectangleRounded(b: Buffer, T: type, box: Box, radius: usize, ecolor: T) void {
+    const r: f64 = @as(f64, @floatFromInt(radius)) - 0.5;
+    const color: u32 = @intFromEnum(ecolor);
+    std.debug.assert(box.w > radius);
+    std.debug.assert(box.h > radius);
+    for (box.y..box.y + radius, 0..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        const dy: f64 = @as(f64, @floatFromInt(y)) - r;
+        for (box.x..box.x + radius, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+        }
+        for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+        }
+    }
+
+    for (box.y2() - radius..box.y2(), radius..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        const dy: f64 = @as(f64, @floatFromInt(y)) - r;
+        for (box.x..box.x + radius, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+        }
+        for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0 and pixel > 0.0) row[dst_x] = color;
+        }
+    }
+
+    for (box.y + radius..box.y2() - radius) |y| {
+        const row = b.rowSlice(y);
+        row[box.x] = color;
+        row[box.x2() - 1] = color;
+    }
+    const top = b.rowSlice(box.y);
+    @memset(top[box.x + radius .. box.x2() - radius], color);
+    const bottom = b.rowSlice(box.y2() - 1);
+    @memset(bottom[box.x + radius .. box.x2() - radius], color);
+}
+
+pub fn drawRectangleRoundedFill(b: Buffer, T: type, box: Box, radius: usize, ecolor: T) void {
+    const r: f64 = @as(f64, @floatFromInt(radius)) - 0.5;
+    const color: u32 = @intFromEnum(ecolor);
+    std.debug.assert(box.w > radius);
+    std.debug.assert(box.h > radius);
+    for (box.y..box.y + radius, 0..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        const dy: f64 = @as(f64, @floatFromInt(y)) - r;
+        for (box.x..box.x + radius, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0) row[dst_x] = color;
+        }
+        for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel <= 1.0) row[dst_x] = color;
+        }
+        @memset(row[box.x + radius .. box.x2() - radius], color);
+    }
+
+    for (box.y2() - radius..box.y2(), radius..) |dst_y, y| {
+        const row = b.rowSlice(dst_y);
+        const dy: f64 = @as(f64, @floatFromInt(y)) - r;
+        for (box.x..box.x + radius, 0..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel < 1.0) row[dst_x] = color;
+        }
+        for (box.x2() - radius..box.x2(), radius..) |dst_x, x| {
+            const dx: f64 = @as(f64, @floatFromInt(x)) - r + 0.0;
+            const pixel: f64 = hypot(dx, dy) - r;
+            if (pixel < 1.0) row[dst_x] = color;
+        }
+        @memset(row[box.x + radius .. box.x2() - radius], color);
+    }
+
+    for (box.y + radius..box.y2() - radius) |y| {
+        const row = b.rowSlice(y);
+        @memset(row[box.x..box.x2()], color);
+    }
+    const top = b.rowSlice(box.y);
+    @memset(top[box.x + radius .. box.x2() - radius], color);
+    const bottom = b.rowSlice(box.y2() - 1);
+    @memset(bottom[box.x + radius .. box.x2() - radius], color);
 }
 
 pub fn drawPoint(b: Buffer, T: type, box: Box, ecolor: T) void {
