@@ -21,7 +21,7 @@ pub const ZMenu = struct {
         pointer: ?*wl.Pointer = null,
         keyboard: ?*wl.Keyboard = null,
 
-        pub fn init(w: *Wayland, size: i32) !void {
+        pub fn init(w: *Wayland, box: Buffer.Box) !void {
             const parent: *ZMenu = @fieldParentPtr("wayland", w);
             w.registry.setListener(*ZMenu, listeners.registry, parent);
             try w.roundtrip();
@@ -34,8 +34,8 @@ pub const ZMenu = struct {
             w.toplevel = try w.xdgsurface.?.getToplevel(); //  orelse return error.NoToplevel;
             w.xdgsurface.?.setListener(*ZMenu, listeners.xdgSurfaceEvent, parent);
             w.toplevel.?.setListener(*ZMenu, listeners.xdgToplevelEvent, parent);
-            w.toplevel.?.setMaxSize(size, size);
-            w.toplevel.?.setMinSize(size, size);
+            w.toplevel.?.setMaxSize(@intCast(box.w), @intCast(box.h));
+            w.toplevel.?.setMinSize(@intCast(box.w), @intCast(box.h));
             w.surface.?.commit();
             try w.roundtrip();
         }
@@ -153,43 +153,24 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     var zm: ZMenu = try .init(alloc);
-    try zm.wayland.init(900);
+    const box: Buffer.Box = .wh(600, 180);
+
+    try zm.wayland.init(box);
     defer zm.raze(alloc);
 
-    const size = 900;
-
     const shm = zm.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, size, size, "zmenu-buffer1");
+    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
-    const colors: Buffer = try .init(shm, size, size, "zmenu-buffer2");
-    defer colors.buffer.destroy();
-    try drawColors(size, buffer, colors);
-
-    colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
-    colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
-    colors.drawCircle(Buffer.ARGB, .xywh(200, 200, 50, 50), .purple);
-    colors.drawCircle(Buffer.ARGB, .xywh(800, 100, 50, 50), .purple);
-
-    colors.drawCircleFill(Buffer.ARGB, .xywh(300, 200, 50, 50), .purple);
-    colors.drawCircleFill(Buffer.ARGB, .xywh(700, 100, 50, 50), .purple);
-
-    colors.drawPoint(Buffer.ARGB, .xy(300, 200), .black);
-
-    colors.drawCircleCentered(Buffer.ARGB, .radius(700, 100, 11), .cyan);
-    colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
-
-    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 300, 200, 50), 10, .red);
-    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .parchment);
-    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .bittersweet_shimmer);
-
-    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .parchment);
-    colors.drawRectangleRounded(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .bittersweet_shimmer);
-    colors.drawRectangleRounded(Buffer.ARGB, .xywh(41, 601, 298, 38), 9, .bittersweet_shimmer);
+    //try drawColors(size, buffer, colors);
+    buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x8f));
+    buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
+    buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
+    buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
 
     try zm.wayland.roundtrip();
 
     const surface = zm.wayland.surface orelse return error.NoSurface;
-    surface.attach(colors.buffer, 0, 0);
+    surface.attach(buffer.buffer, 0, 0);
     surface.commit();
     try zm.wayland.roundtrip();
 
@@ -214,28 +195,22 @@ pub fn main() !void {
         }
         i +%= 1;
         if (i % 100 == 0) {
-            if (i / 100 & 1 > 0) {
-                surface.attach(colors.buffer, 0, 0);
-                surface.damage(0, 0, size, size);
-                surface.commit();
-            } else {
-                surface.attach(buffer.buffer, 0, 0);
-                surface.damage(0, 0, size, size);
-                surface.commit();
-            }
+            surface.attach(buffer.buffer, 0, 0);
+            surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
+            surface.commit();
         }
         if (zm.key_buffer.items.len != draw_count) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
-            try drawBackground0(buffer, .wh(900, 300));
+            //try drawBackground0(buffer, .wh(900, 300));
             if (draw_count > 0) {
-                buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .parchment);
-                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .bittersweet_shimmer);
-                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .bittersweet_shimmer);
-                try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, 50, 50);
+                buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .ash_gray);
+                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .hookers_green);
+                buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .hookers_green);
+                try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
             }
             surface.attach(buffer.buffer, 0, 0);
-            surface.damageBuffer(0, 0, size, 150);
+            surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
         }
     }
@@ -247,10 +222,9 @@ fn drawText(
     buffer: *const Buffer,
     text: []const u8,
     ttf: Ttf,
-    x: u32,
-    y: u32,
+    box: Buffer.Box,
 ) !void {
-    var layout_helper = LayoutHelper.init(alloc, text, ttf, 512, 14);
+    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 14);
     defer layout_helper.glyphs.deinit();
     while (try layout_helper.step(ttf)) {}
 
@@ -264,9 +238,9 @@ fn drawText(
 
     for (tl.glyphs) |g| {
         const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
-        buffer.drawFont(Buffer.ARGB, .black, .xywh(
-            @intCast(@as(i32, @intCast(x)) + g.pixel_x1),
-            @intCast(@as(i32, @intCast(y)) - g.pixel_y1),
+        buffer.drawFont(Buffer.ARGB, .charcoal, .xywh(
+            @intCast(@as(i32, @intCast(box.x)) + g.pixel_x1),
+            @intCast(@as(i32, @intCast(box.y)) - g.pixel_y1),
             @intCast(canvas.width),
             @intCast(canvas.height),
         ), canvas.pixels);

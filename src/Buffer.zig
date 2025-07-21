@@ -39,8 +39,16 @@ pub const ARGB = enum(u32) {
     blue = 0xff0000ff,
     purple = 0xffaa11ff, // I *feel* like this is more purpley
     cyan = 0xff00ffff,
+
     bittersweet_shimmer = 0xffbc4749,
     parchment = 0xfff2e8cf,
+
+    ash_gray = 0xffcad2c5,
+    cambridge_blue = 0xff84a98c,
+    hookers_green = 0xff52796f,
+    dark_slate_gray = 0xff354f52,
+    charcoal = 0xff2f3e46,
+
     _,
 
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
@@ -58,6 +66,12 @@ pub const ARGB = enum(u32) {
 
     pub fn fromBytes(bytes: [4]u8) ARGB {
         return @enumFromInt(@as(*align(1) const u32, @ptrCast(&bytes)).*);
+    }
+
+    pub fn alpha(src: ARGB, trans: u8) ARGB {
+        const color: u32 = @intFromEnum(src);
+        const mask: u32 = 0x00ffffff | (@as(u32, trans) << 24);
+        return @enumFromInt(color & mask);
     }
 };
 
@@ -94,13 +108,13 @@ pub const Box = struct {
     }
 };
 
-pub fn init(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !Buffer {
-    const buffer, const raw = try newPool(shm, width, height, name);
+pub fn init(shm: *wl.Shm, box: Box, name: []const u8) !Buffer {
+    const buffer, const raw = try newPool(shm, @intCast(box.w), @intCast(box.h), name);
     return .{
         .buffer = buffer,
         .raw = raw,
-        .width = width,
-        .height = height,
+        .width = @intCast(box.w),
+        .height = @intCast(box.h),
     };
 }
 

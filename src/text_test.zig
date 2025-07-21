@@ -95,6 +95,27 @@ pub fn main() !void {
     try drawText2(alloc, &buffer, ttf);
     try drawText3(alloc, &buffer, ttf);
 
+    colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
+    colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
+    colors.drawCircle(Buffer.ARGB, .xywh(200, 200, 50, 50), .purple);
+    colors.drawCircle(Buffer.ARGB, .xywh(800, 100, 50, 50), .purple);
+
+    colors.drawCircleFill(Buffer.ARGB, .xywh(300, 200, 50, 50), .purple);
+    colors.drawCircleFill(Buffer.ARGB, .xywh(700, 100, 50, 50), .purple);
+
+    colors.drawPoint(Buffer.ARGB, .xy(300, 200), .black);
+
+    colors.drawCircleCentered(Buffer.ARGB, .radius(700, 100, 11), .cyan);
+    colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
+
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 300, 200, 50), 10, .red);
+    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .parchment);
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(10, 400, 200, 20), 3, .bittersweet_shimmer);
+
+    colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .parchment);
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .bittersweet_shimmer);
+    colors.drawRectangleRounded(Buffer.ARGB, .xywh(41, 601, 298, 38), 9, .bittersweet_shimmer);
+
     var i: usize = 0;
     while (zm.running) {
         switch (zm.wayland.display.dispatch()) {
