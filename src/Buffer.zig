@@ -2,6 +2,7 @@ buffer: *wl.Buffer,
 raw: []u32,
 width: u32,
 height: u32,
+damaged: Box = .zero,
 
 const Buffer = @This();
 
@@ -66,6 +67,8 @@ pub const Box = struct {
     w: usize,
     h: usize,
 
+    pub const zero: Box = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
+
     pub inline fn x2(b: Box) usize {
         return b.x + b.w;
     }
@@ -103,6 +106,11 @@ pub fn init(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !Buffer {
 
 pub fn raze(b: Buffer) void {
     b.buffer.destroy();
+}
+
+pub fn getDamaged(b: *Buffer) Box {
+    defer b.damaged = .zero;
+    return b.damaged;
 }
 
 fn rowSlice(b: Buffer, y: usize) []u32 {
