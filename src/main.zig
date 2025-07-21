@@ -185,7 +185,7 @@ pub fn main() !void {
 
     var i: usize = 0;
     var draw_count: usize = 0;
-    while (zm.running) {
+    while (zm.running) : (i +%= 1) {
         switch (zm.wayland.display.dispatch()) {
             .SUCCESS => {},
             else => |w| {
@@ -193,8 +193,7 @@ pub fn main() !void {
                 return error.DispatchFailed;
             },
         }
-        i +%= 1;
-        if (i % 100 == 0) {
+        if (i % 1000 == 0) {
             surface.attach(buffer.buffer, 0, 0);
             surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
