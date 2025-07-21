@@ -58,12 +58,12 @@ pub fn Listeners(T: type) type {
             switch (evt) {
                 .capabilities => |cap| {
                     if (cap.capabilities.pointer) {
-                        zm.wayland.pointer = s.getPointer() catch return;
-                        zm.wayland.pointer.?.setListener(*T, pointerEvent, zm);
+                        zm.wayland.hid.pointer = s.getPointer() catch return;
+                        zm.wayland.hid.pointer.?.setListener(*T, pointerEvent, zm);
                     }
                     if (cap.capabilities.keyboard) {
-                        zm.wayland.keyboard = s.getKeyboard() catch return;
-                        zm.wayland.keyboard.?.setListener(*T, keyEvent, zm);
+                        zm.wayland.hid.keyboard = s.getKeyboard() catch return;
+                        zm.wayland.hid.keyboard.?.setListener(*T, keyEvent, zm);
                     }
                 },
                 .name => |name| if (debug_wl) std.debug.print("name {s}\n", .{std.mem.span(name.name)}),
@@ -72,15 +72,8 @@ pub fn Listeners(T: type) type {
 
         fn keyEvent(_: *wl.Keyboard, evt: wl.Keyboard.Event, zm: *T) void {
             switch (evt) {
-                .key => zm.wlEvent(.{ .key = evt }),
+                .key, .modifiers, .enter, .leave => zm.wlEvent(.{ .key = evt }),
                 .keymap => zm.newKeymap(evt),
-                .modifiers => |mods| {
-                    if (mods.mods_depressed > 0) {
-                        //std.debug.print("keymods {}\n", .{mods});
-                    }
-                },
-                .enter => {},
-                .leave => {},
                 //.repeat_info => {},
                 else => {
                     if (debug_wl) std.debug.print("keyevent other {}\n", .{evt});

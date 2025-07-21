@@ -19,8 +19,11 @@ pub const Wayland = struct {
     dmabuf: ?*Zwp.LinuxDmabufV1 = null,
 
     seat: ?*wl.Seat = null,
-    pointer: ?*wl.Pointer = null,
-    keyboard: ?*wl.Keyboard = null,
+    hid: struct {
+        pointer: ?*wl.Pointer = null,
+        keyboard: ?*wl.Keyboard = null,
+        mods: u32 = 0,
+    } = .{},
 
     pub fn init(w: *Wayland, box: Buffer.Box) !void {
         const parent: *ZMenu = @fieldParentPtr("wayland", w);
@@ -102,12 +105,13 @@ pub fn initDmabuf(zm: *ZMenu) !void {
 /// I'm not a fan of this API either, but it lives here until I can decide
 /// where it belongs.
 pub fn wlEvent(zm: *ZMenu, event: Event) void {
+    const debug_events = false;
     switch (event) {
         .key => |k| switch (k) {
             .key => |key| switch (key.state) {
                 .pressed => {
                     // todo bounds checking
-                    if (zm.keymap.ascii(key.key)) |c| {
+                    if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
                         zm.key_buffer.appendAssumeCapacity(c);
                     } else switch (zm.keymap.ctrl(key.key)) {
                         .backspace => _ = zm.key_buffer.pop(),
@@ -123,8 +127,12 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
                 },
                 .released => {},
                 else => |unk| {
-                    std.debug.print("unexpected keyboard key state {} \n", .{unk});
+                    if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
                 },
+            },
+            .modifiers => {
+                zm.wayland.hid.mods = k.modifiers.mods_depressed;
+                if (debug_events) std.debug.print("mods {}\n", .{k.modifiers});
             },
             else => {},
         },

@@ -14,6 +14,20 @@ pub const Control = enum(u16) {
     UNKNOWN = 0,
 };
 
+pub const Modifiers = struct {
+    shift: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+
+    pub fn init(code: u32) Modifiers {
+        return .{
+            .shift = code & 1 > 0,
+            .ctrl = code & 4 > 0,
+            .alt = code & 8 > 0,
+        };
+    }
+};
+
 pub fn init() Keymap {
     return .{};
 }
@@ -44,63 +58,75 @@ fn parse(_: []const u8) !void {
     return error.NotImplemented;
 }
 
-pub fn ascii(_: Keymap, key: u32) ?u8 {
-    return switch (key) {
-        40 => '\'',
-        51 => ',',
-        52 => '.',
-        25 => 'p',
-        21 => 'y',
-        33 => 'f',
-        34 => 'g',
-        46 => 'c',
-        19 => 'r',
-        38 => 'l',
-        30 => 'a',
-        24 => 'o',
-        18 => 'e',
-        22 => 'u',
-        57 => ' ',
-        23 => 'i',
-        32 => 'd',
-        35 => 'h',
-        20 => 't',
-        49 => 'n',
-        31 => 's',
-        39 => ';',
-        53 => '/',
-        13 => '=',
-        12 => '-',
-        16 => 'q',
-        36 => 'j',
-        37 => 'k',
-        45 => 'x',
-        48 => 'b',
-        50 => 'm',
-        17 => 'w',
-        47 => 'v',
-        44 => 'z',
-        2 => '1',
-        3 => '2',
-        4 => '3',
-        5 => '4',
-        6 => '5',
-        7 => '6',
-        8 => '7',
-        9 => '8',
-        10 => '9',
-        11 => '0',
-        42 => null, // Left Shift
-        54 => null, // Right Shift
-        14 => null, // Backspace
-        28 => null, // Enter
-        125 => null, // Meta
-        1 => null, // Escape
+pub fn ascii(_: Keymap, key: u32, mods: Modifiers) ?u8 {
+    const code: [4]?u8 = switch (key) {
+        40 => .{ '\'', '"', '\'', '\'' },
+        51 => .{ ',', '<', ',', ',' },
+        52 => .{ '.', '>', '.', '.' },
+        25 => .{ 'p', 'P', 'p', 'p' },
+        21 => .{ 'y', 'Y', 'y', 'y' },
+        33 => .{ 'f', 'F', 'f', 'f' },
+        34 => .{ 'g', 'G', 'g', 'g' },
+        46 => .{ 'c', 'C', 'c', 'c' },
+        19 => .{ 'r', 'R', 'r', 'r' },
+        38 => .{ 'l', 'L', 'l', 'l' },
+        30 => .{ 'a', 'A', 'a', 'a' },
+        24 => .{ 'o', 'O', 'o', 'o' },
+        18 => .{ 'e', 'E', 'e', 'e' },
+        22 => .{ 'u', 'U', 'u', 'u' },
+        57 => .{ ' ', ' ', ' ', ' ' },
+        23 => .{ 'i', 'I', 'i', 'i' },
+        32 => .{ 'd', 'D', 'd', 'd' },
+        35 => .{ 'h', 'H', 'h', 'h' },
+        20 => .{ 't', 'T', 't', 't' },
+        49 => .{ 'n', 'N', 'n', 'n' },
+        31 => .{ 's', 'S', 's', 's' },
+        39 => .{ ';', ':', ';', ';' },
+        53 => .{ '/', '|', '/', '/' },
+        13 => .{ '=', '+', '=', '=' },
+        12 => .{ '-', '_', '-', '-' },
+        16 => .{ 'q', 'Q', 'q', 'q' },
+        36 => .{ 'j', 'J', 'j', 'j' },
+        37 => .{ 'k', 'K', 'k', 'k' },
+        45 => .{ 'x', 'X', 'x', 'x' },
+        48 => .{ 'b', 'B', 'b', 'b' },
+        50 => .{ 'm', 'M', 'm', 'm' },
+        17 => .{ 'w', 'W', 'w', 'w' },
+        47 => .{ 'v', 'V', 'v', 'v' },
+        44 => .{ 'z', 'Z', 'z', 'z' },
+        2 => .{ '1', '!', '1', '1' },
+        3 => .{ '2', '@', '2', '2' },
+        4 => .{ '3', '#', '3', '3' },
+        5 => .{ '4', '$', '4', '4' },
+        6 => .{ '5', '%', '5', '5' },
+        7 => .{ '6', '^', '6', '6' },
+        8 => .{ '7', '&', '7', '7' },
+        9 => .{ '8', '*', '8', '8' },
+        10 => .{ '9', '(', '9', '9' },
+        11 => .{ '0', ')', '0', '0' },
+
+        42 => .{ null, null, null, null }, // Left Shift,
+        54 => .{ null, null, null, null }, // Right Shift,
+        29 => .{ null, null, null, null }, // Left Ctrl,
+        97 => .{ null, null, null, null }, // Right Ctrl,
+        56 => .{ null, null, null, null }, // Left Alt,
+        14 => .{ null, null, null, null }, // Backspace,
+        28 => .{ null, null, null, null }, // Enter,
+        125 => .{ null, null, null, null }, // Meta,
+        1 => .{ null, null, null, null }, //
         else => {
             std.debug.print("Unable to translate ascii {}\n", .{key});
             return null;
         },
     };
+    return if (mods.shift)
+        code[1]
+    else if (mods.ctrl)
+        code[2]
+    else if (mods.alt)
+        code[3]
+    else
+        code[0];
 }
 
 pub fn ctrl(_: Keymap, key: u32) Control {
