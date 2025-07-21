@@ -1,176 +1,3 @@
-pub const ZMenu = struct {
-    wayland: Wayland,
-    keymap: Keymap = .{},
-    running: bool = true,
-    key_buffer: std.ArrayListUnmanaged(u8),
-
-    pub const Wayland = struct {
-        display: *wl.Display,
-        registry: *wl.Registry,
-
-        compositor: ?*wl.Compositor = null,
-        shm: ?*wl.Shm = null,
-        wm_base: ?*Xdg.WmBase = null,
-        surface: ?*wl.Surface = null,
-        xdgsurface: ?*Xdg.Surface = null,
-        toplevel: ?*Xdg.Toplevel = null,
-
-        dmabuf: ?*Zwp.LinuxDmabufV1 = null,
-
-        seat: ?*wl.Seat = null,
-        pointer: ?*wl.Pointer = null,
-        keyboard: ?*wl.Keyboard = null,
-
-        pub fn init(w: *Wayland, box: Buffer.Box) !void {
-            const parent: *ZMenu = @fieldParentPtr("wayland", w);
-            w.registry.setListener(*ZMenu, listeners.registry, parent);
-            try w.roundtrip();
-
-            const compositor = w.compositor orelse return error.NoWlCompositor;
-            const wm_base = w.wm_base orelse return error.NoXdgWmBase;
-
-            w.surface = try compositor.createSurface();
-            w.xdgsurface = try wm_base.getXdgSurface(w.surface.?);
-            w.toplevel = try w.xdgsurface.?.getToplevel(); //  orelse return error.NoToplevel;
-            w.xdgsurface.?.setListener(*ZMenu, listeners.xdgSurfaceEvent, parent);
-            w.toplevel.?.setListener(*ZMenu, listeners.xdgToplevelEvent, parent);
-
-            w.resize(box) catch {
-                // Resizing is optional, but the round trip is not
-                try w.roundtrip();
-            };
-        }
-
-        pub fn raze(w: *Wayland) void {
-            if (w.toplevel) |tl| tl.destroy();
-            if (w.xdgsurface) |s| s.destroy();
-            if (w.surface) |s| s.destroy();
-        }
-
-        pub fn roundtrip(w: *Wayland) !void {
-            if (w.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-        }
-
-        pub fn resize(w: *Wayland, box: Buffer.Box) !void {
-            if (w.toplevel) |tl| {
-                tl.setMaxSize(@intCast(box.w), @intCast(box.h));
-                tl.setMinSize(@intCast(box.w), @intCast(box.h));
-            }
-            if (w.surface) |s| s.commit();
-            try w.roundtrip();
-        }
-    };
-
-    pub const Event = union(enum) {
-        key: wl.Keyboard.Event,
-        pointer: wl.Pointer.Event,
-    };
-
-    pub fn init(a: Allocator) !ZMenu {
-        const display = try wl.Display.connect(null);
-        const registry = try display.getRegistry();
-        return .{
-            .wayland = .{
-                .display = display,
-                .registry = registry,
-            },
-            .key_buffer = try .initCapacity(a, 4096),
-        };
-    }
-
-    pub fn raze(zm: *ZMenu, a: Allocator) void {
-        zm.wayland.raze();
-        zm.keymap.raze();
-        zm.key_buffer.deinit(a);
-    }
-
-    pub fn initDmabuf(zm: *ZMenu) !void {
-        const dmabuf = zm.wayland.dmabuf orelse return error.NoDMABUF;
-        if (zm.wayland.surface) |surface| {
-            const feedback = try dmabuf.getSurfaceFeedback(surface);
-            std.debug.print("dma feedback {}\n", .{feedback});
-        } else {
-            const feedback = try dmabuf.getDefaultFeedback();
-            std.debug.print("dma feedback {}\n", .{feedback});
-        }
-        // TODO implement listener/processor
-
-        try zm.wayland.roundtrip();
-    }
-
-    /// I'm not a fan of this API either, but it lives here until I can decide
-    /// where it belongs.
-    pub fn wlEvent(zm: *ZMenu, event: Event) void {
-        switch (event) {
-            .key => |k| switch (k) {
-                .key => |key| switch (key.state) {
-                    .pressed => {
-                        // todo bounds checking
-                        if (zm.keymap.ascii(key.key)) |c| {
-                            zm.key_buffer.appendAssumeCapacity(c);
-                        } else switch (zm.keymap.ctrl(key.key)) {
-                            .backspace => _ = zm.key_buffer.pop(),
-                            .enter => {
-                                if (zm.key_buffer.items.len > 0) {
-                                    exec(zm.key_buffer.items) catch {};
-                                }
-                                zm.key_buffer.clearRetainingCapacity();
-                            },
-                            .escape => zm.end(),
-                            else => {},
-                        }
-                    },
-                    .released => {},
-                    else => |unk| {
-                        std.debug.print("unexpected keyboard key state {} \n", .{unk});
-                    },
-                },
-                else => {},
-            },
-            .pointer => |_| {},
-        }
-    }
-
-    pub fn end(zm: *ZMenu) void {
-        if (zm.key_buffer.items.len > 0) {
-            zm.key_buffer.clearRetainingCapacity();
-        } else zm.running = false;
-    }
-
-    pub fn configure(_: *ZMenu, evt: Xdg.Toplevel.Event) void {
-        const debug = false;
-        switch (evt) {
-            .configure => |conf| if (debug) std.debug.print("toplevel conf {}\n", .{conf}),
-            .configure_bounds => |bounds| if (debug) std.debug.print("toplevel bounds {}\n", .{bounds}),
-            .wm_capabilities => |caps| if (debug) std.debug.print("toplevel caps {}\n", .{caps}),
-            .close => unreachable,
-        }
-    }
-
-    pub fn newKeymap(zm: *ZMenu, evt: wl.Keyboard.Event) void {
-        if (false) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
-        if (Keymap.initFd(evt.keymap.fd, evt.keymap.size)) |km| {
-            zm.keymap = km;
-        } else |_| {
-            // TODO don't ignore error
-        }
-    }
-};
-
-fn exec(cmd: []const u8) !noreturn {
-    var argv = cmd;
-    var argv_buf: [2048]u8 = undefined;
-    if (cmd[0] != '/') {
-        argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
-    }
-
-    std.process.execve(
-        std.heap.page_allocator,
-        &[1][]const u8{argv},
-        null,
-    ) catch @panic("oopsies");
-}
-
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     const alloc = gpa.allocator();
@@ -185,7 +12,7 @@ pub fn main() !void {
     const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
     //try drawColors(size, buffer, colors);
-    buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x8f));
+    buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
     buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
     buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
     buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
@@ -196,8 +23,6 @@ pub fn main() !void {
     surface.attach(buffer.buffer, 0, 0);
     surface.commit();
     try zm.wayland.roundtrip();
-
-    //zm.wayland.toplevel.?.setMaxSize(size, size);
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
@@ -299,16 +124,15 @@ test {
     _ = &Buffer;
     _ = &LayoutHelper;
     _ = &Ttf;
-    _ = &@import("Glyph.zig");
-    _ = &listeners;
+    _ = &ZMenu;
+    _ = &Glyph;
 }
 
 const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
-const listeners = @import("listeners.zig").Listeners(ZMenu);
-const Keymap = @import("Keymap.zig");
+const ZMenu = @import("ZMenu.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
