@@ -100,6 +100,13 @@ pub const ZMenu = struct {
                             zm.key_buffer.appendAssumeCapacity(c);
                         } else switch (zm.keymap.ctrl(key.key)) {
                             .backspace => _ = zm.key_buffer.pop(),
+                            .enter => {
+                                if (zm.key_buffer.items.len > 0) {
+                                    exec(zm.key_buffer.items) catch {};
+                                }
+                                zm.key_buffer.clearRetainingCapacity();
+                            },
+
                             else => {},
                         }
                     },
@@ -131,6 +138,15 @@ pub const ZMenu = struct {
         }
     }
 };
+
+fn exec(cmd: []const u8) !noreturn {
+    if (cmd[0] != '/') return error.InvalidArg0;
+    std.process.execve(
+        std.heap.page_allocator,
+        &[1][]const u8{cmd},
+        null,
+    ) catch @panic("oopsies");
+}
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
