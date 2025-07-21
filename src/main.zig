@@ -21,6 +21,31 @@ pub const ZMenu = struct {
         pointer: ?*wl.Pointer = null,
         keyboard: ?*wl.Keyboard = null,
 
+        pub fn init(w: *Wayland, size: i32) !void {
+            const parent: *ZMenu = @fieldParentPtr("wayland", w);
+            w.registry.setListener(*ZMenu, listeners.registry, parent);
+            try w.roundtrip();
+
+            const compositor = w.compositor orelse return error.NoWlCompositor;
+            const wm_base = w.wm_base orelse return error.NoXdgWmBase;
+
+            w.surface = try compositor.createSurface();
+            w.xdgsurface = try wm_base.getXdgSurface(w.surface.?);
+            w.toplevel = try w.xdgsurface.?.getToplevel(); //  orelse return error.NoToplevel;
+            w.xdgsurface.?.setListener(*ZMenu, listeners.xdgSurfaceEvent, parent);
+            w.toplevel.?.setListener(*ZMenu, listeners.xdgToplevelEvent, parent);
+            w.toplevel.?.setMaxSize(size, size);
+            w.toplevel.?.setMinSize(size, size);
+            w.surface.?.commit();
+            try w.roundtrip();
+        }
+
+        pub fn raze(w: *Wayland) void {
+            if (w.toplevel) |tl| tl.destroy();
+            if (w.xdgsurface) |s| s.destroy();
+            if (w.surface) |s| s.destroy();
+        }
+
         pub fn roundtrip(w: *Wayland) !void {
             if (w.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
         }
@@ -39,13 +64,14 @@ pub const ZMenu = struct {
                 .display = display,
                 .registry = registry,
             },
-            .key_buffer = try .initCapacity(a, 100),
+            .key_buffer = try .initCapacity(a, 4096),
         };
     }
 
-    pub fn initWayland(zm: *ZMenu) !void {
-        zm.wayland.registry.setListener(*ZMenu, listeners.registry, zm);
-        if (zm.wayland.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    pub fn raze(zm: *ZMenu, a: Allocator) void {
+        zm.wayland.raze();
+        zm.keymap.raze();
+        zm.key_buffer.deinit(a);
     }
 
     pub fn initDmabuf(zm: *ZMenu) !void {
@@ -111,27 +137,10 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     var zm: ZMenu = try .init(alloc);
-    try zm.initWayland();
-    try zm.wayland.roundtrip();
+    try zm.wayland.init(900);
+    defer zm.raze(alloc);
 
     const size = 900;
-
-    const compositor = zm.wayland.compositor orelse return error.NoWlCompositor;
-
-    const surface = try compositor.createSurface();
-    defer surface.destroy();
-    const wm_base = zm.wayland.wm_base orelse return error.NoXdgWmBase;
-    const xdg_surface = try wm_base.getXdgSurface(surface);
-    defer xdg_surface.destroy();
-    zm.wayland.toplevel = try xdg_surface.getToplevel(); //  orelse return error.NoToplevel;
-    defer zm.wayland.toplevel.?.destroy();
-
-    xdg_surface.setListener(*ZMenu, listeners.xdgSurface, &zm);
-    zm.wayland.toplevel.?.setListener(*ZMenu, listeners.xdgToplevel, &zm);
-    zm.wayland.toplevel.?.setMaxSize(size, size);
-    zm.wayland.toplevel.?.setMinSize(size, size);
-    surface.commit();
-    try zm.wayland.roundtrip();
 
     const shm = zm.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, size, size, "zmenu-buffer1");
@@ -154,6 +163,7 @@ pub fn main() !void {
     colors.drawPoint(Buffer.ARGB, .xy(700, 100), .black);
     try zm.wayland.roundtrip();
 
+    const surface = zm.wayland.surface orelse return error.NoSurface;
     surface.attach(colors.buffer, 0, 0);
     surface.commit();
     try zm.wayland.roundtrip();

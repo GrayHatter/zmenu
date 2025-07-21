@@ -29,7 +29,13 @@ pub fn initFd(fd: anytype, size: u32) !Keymap {
 
     if (false) std.debug.print("{s}\n", .{data});
     _ = try parse(data);
-    return .{};
+    return .{
+        .data = data,
+    };
+}
+
+pub fn raze(k: Keymap) void {
+    if (k.data) |d| std.posix.munmap(@alignCast(d));
 }
 
 fn parse(_: []const u8) !void {

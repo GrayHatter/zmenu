@@ -1,4 +1,4 @@
-const debug_global = false;
+const debug_wl = false;
 pub fn Listeners(T: type) type {
     return struct {
         pub fn registry(r: *wl.Registry, event: wl.Registry.Event, zm: *T) void {
@@ -12,36 +12,36 @@ pub fn Listeners(T: type) type {
                         zm.wayland.wm_base = r.bind(global.name, Xdg.WmBase, @min(global.version, Xdg.WmBase.generated_version)) catch return;
                     } else if (orderZ(u8, global.interface, wl.Seat.interface.name) == .eq) {
                         zm.wayland.seat = r.bind(global.name, wl.Seat, @min(global.version, wl.Seat.generated_version)) catch return;
-                        zm.wayland.seat.?.setListener(*T, seat, zm);
+                        zm.wayland.seat.?.setListener(*T, seatEvent, zm);
                     } else if (orderZ(u8, global.interface, Zwp.LinuxDmabufV1.interface.name) == .eq) {
                         zm.wayland.dmabuf = r.bind(global.name, Zwp.LinuxDmabufV1, @min(global.version, Zwp.LinuxDmabufV1.generated_version)) catch return;
-                        zm.wayland.dmabuf.?.setListener(*T, dmabufCb, zm);
+                        zm.wayland.dmabuf.?.setListener(*T, dmabufEvent, zm);
                     } else {
-                        if (debug_global) std.debug.print("extra global {s}\n", .{global.interface});
+                        if (debug_wl) std.debug.print("extra global {s}\n", .{global.interface});
                     }
                 },
                 .global_remove => {},
             }
         }
 
-        pub fn xdgSurface(xdg_surface: *Xdg.Surface, event: Xdg.Surface.Event, _: *T) void {
+        pub fn xdgSurfaceEvent(xdg_surface: *Xdg.Surface, event: Xdg.Surface.Event, _: *T) void {
             switch (event) {
                 .configure => |configure| xdg_surface.ackConfigure(configure.serial),
             }
         }
 
-        pub fn xdgToplevel(_: *Xdg.Toplevel, event: Xdg.Toplevel.Event, zm: *T) void {
+        pub fn xdgToplevelEvent(_: *Xdg.Toplevel, event: Xdg.Toplevel.Event, zm: *T) void {
             switch (event) {
                 .configure => zm.configure(event),
                 .close => zm.end(),
                 .configure_bounds => |bounds| std.debug.print("toplevel bounds {}\n", .{bounds}),
                 .wm_capabilities => |caps| {
-                    std.debug.print("toplevel caps {}\n", .{caps});
+                    if (debug_wl) std.debug.print("toplevel caps {}\n", .{caps});
                 },
             }
         }
 
-        fn dmabufCb(_: *Zwp.LinuxDmabufV1, evt: Zwp.LinuxDmabufV1.Event, _: *T) void {
+        fn dmabufEvent(_: *Zwp.LinuxDmabufV1, evt: Zwp.LinuxDmabufV1.Event, _: *T) void {
             // Only sent in version 1
             switch (evt) {
                 .format => |format| {
@@ -58,23 +58,23 @@ pub fn Listeners(T: type) type {
             }
         }
 
-        fn seat(s: *wl.Seat, evt: wl.Seat.Event, zm: *T) void {
+        fn seatEvent(s: *wl.Seat, evt: wl.Seat.Event, zm: *T) void {
             switch (evt) {
                 .capabilities => |cap| {
                     if (cap.capabilities.pointer) {
                         zm.wayland.pointer = s.getPointer() catch return;
-                        zm.wayland.pointer.?.setListener(*T, pointer, zm);
+                        zm.wayland.pointer.?.setListener(*T, pointerEvent, zm);
                     }
                     if (cap.capabilities.keyboard) {
                         zm.wayland.keyboard = s.getKeyboard() catch return;
-                        zm.wayland.keyboard.?.setListener(*T, key_, zm);
+                        zm.wayland.keyboard.?.setListener(*T, keyEvent, zm);
                     }
                 },
-                .name => |name| std.debug.print("name {s}\n", .{std.mem.span(name.name)}),
+                .name => |name| if (debug_wl) std.debug.print("name {s}\n", .{std.mem.span(name.name)}),
             }
         }
 
-        fn key_(_: *wl.Keyboard, evt: wl.Keyboard.Event, zm: *T) void {
+        fn keyEvent(_: *wl.Keyboard, evt: wl.Keyboard.Event, zm: *T) void {
             switch (evt) {
                 .key => |key| switch (key.key) {
                     1 => zm.end(),
@@ -90,12 +90,12 @@ pub fn Listeners(T: type) type {
                 .leave => {},
                 //.repeat_info => {},
                 else => {
-                    std.debug.print("keyevent other {}\n", .{evt});
+                    if (debug_wl) std.debug.print("keyevent other {}\n", .{evt});
                 },
             }
         }
 
-        fn pointer(_: *wl.Pointer, evt: wl.Pointer.Event, zm: *T) void {
+        fn pointerEvent(_: *wl.Pointer, evt: wl.Pointer.Event, zm: *T) void {
             switch (evt) {
                 .enter => |enter| {
                     if (false) std.debug.print(
