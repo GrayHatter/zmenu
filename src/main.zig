@@ -7,6 +7,22 @@ pub fn main() !void {
 
     try zm.wayland.init(box);
     defer zm.raze(alloc);
+    zm_key_buffer = &zm.key_buffer;
+
+    var ui_children = [_]ui.Component{
+        .{
+            .vtable = .{
+                .init = UiExecOptions.init,
+                .raze = UiExecOptions.raze,
+                .draw = UiExecOptions.draw,
+                .background = null,
+                .keypress = null,
+                .mmove = null,
+                .mclick = null,
+            },
+            .children = &.{},
+        },
+    };
 
     var root = ui.Component{
         .vtable = .{
@@ -19,11 +35,12 @@ pub fn main() !void {
             .mclick = null,
         },
         .box = box,
-        .children = &.{},
+        .children = &ui_children,
     };
     zm.ui_root = &root;
 
-    try root.init(box);
+    try root.init(alloc, box);
+    defer root.raze(alloc);
 
     const shm = zm.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
@@ -35,7 +52,7 @@ pub fn main() !void {
     try zm.wayland.roundtrip();
 
     const paths = [_][]const u8{"/usr/bin"};
-    var sys_exes: std.ArrayListUnmanaged([]const u8) = try .initCapacity(alloc, 4096);
+    sys_exes = try .initCapacity(alloc, 4096);
     var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, &paths });
     defer thread.join();
 
@@ -47,8 +64,9 @@ pub fn main() !void {
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(alloc, font);
+    ttf_ptr = &ttf;
 
-    var glyph_cache: Glyph.Cache = .init(14);
+    glyph_cache = .init(14);
     defer glyph_cache.raze(alloc);
 
     const dir = std.fs.cwd();
@@ -87,7 +105,8 @@ pub fn main() !void {
             var path_box = history_box;
             path_box.y += 20 * hist_drawn;
             path_box.h -= 20 * hist_drawn;
-            _ = try drawPathlist(alloc, &glyph_cache, &buffer, sys_exes.items, zm.key_buffer.items, ttf, path_box);
+            _ = root.draw(&buffer, path_box);
+            //_ = try drawPathlist(alloc, &glyph_cache, &buffer, sys_exes.items, zm.key_buffer.items, ttf, path_box);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
@@ -98,6 +117,11 @@ pub fn main() !void {
         try writeOutHistory(dir, commands, zm.key_buffer.items);
     }
 }
+
+var glyph_cache: Glyph.Cache = undefined;
+var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
+var zm_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
+var ttf_ptr: *const Ttf = undefined;
 
 pub const Options = struct {
     history: bool = true,
@@ -204,27 +228,63 @@ fn drawBackground(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
     b.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
 }
 
-fn drawPathlist(
-    a: Allocator,
-    gc: *Glyph.Cache,
-    buf: *const Buffer,
-    bins: []const []const u8,
-    prefix: []const u8,
-    ttf: Ttf,
-    box: Buffer.Box,
-) !usize {
-    if (prefix.len == 0 or bins.len == 0) return 0;
-    var drawn: usize = 0;
-    for (bins) |bin| {
-        const y = box.y + 20 + 20 * (drawn);
-        if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
-            try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
-            drawn += 1;
-        }
-        if (drawn > 4) break;
+const UiExecOptions = struct {
+    alloc: Allocator,
+    highlight: usize = 0,
+
+    pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
+        const options: *UiExecOptions = try a.create(UiExecOptions);
+        options.* = .{
+            .alloc = a,
+        };
+        comp.state = options;
     }
-    return drawn;
-}
+
+    pub fn raze(comp: *ui.Component, a: Allocator) void {
+        a.destroy(@as(*UiExecOptions, @alignCast(@ptrCast(comp.state))));
+    }
+
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+        const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
+
+        _ = drawPathlist(
+            highlight.alloc,
+            &glyph_cache,
+            buffer,
+            highlight.highlight,
+            sys_exes.items,
+            zm_key_buffer.items,
+            ttf_ptr.*,
+            box,
+        ) catch @panic("drawing failed");
+        return true;
+    }
+
+    fn drawPathlist(
+        a: Allocator,
+        gc: *Glyph.Cache,
+        buf: *const Buffer,
+        highlighted: usize,
+        bins: []const []const u8,
+        prefix: []const u8,
+        ttf: Ttf,
+        box: Buffer.Box,
+    ) !usize {
+        if (prefix.len == 0 or bins.len == 0) return 0;
+        var drawn: usize = 0;
+        for (bins) |bin| {
+            const y = box.y + 20 + 20 * (drawn);
+            if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
+                try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
+                drawn += 1;
+                if (drawn == highlighted)
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x, y, box.w, 25), 10, .hookers_green);
+            }
+            if (drawn > 4) break;
+        }
+        return drawn;
+    }
+};
 
 fn drawHistory(
     a: Allocator,
