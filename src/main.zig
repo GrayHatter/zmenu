@@ -201,6 +201,62 @@ const UiRoot = struct {
     pub fn background(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
     }
+
+    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+        for (comp.children) |*child| _ = child.keyPress(evt);
+        if (evt.up) return true;
+        switch (evt.key) {
+            .char => {},
+            .ctrl => |ctrl| switch (ctrl) {
+                .enter => {
+                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
+                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
+                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
+                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
+                        history.cursor_idx = 0;
+                        paths.cursor_idx = 0;
+                    } else if (textbox.key_buffer.items.len > 0) {
+                        if (std.posix.fork()) |pid| {
+                            if (pid == 0) {
+                                exec(textbox.key_buffer.items) catch {};
+                            } else {
+                                root_zmenu.running = false;
+                            }
+                        } else |_| @panic("everyone knows fork can't fail");
+                    }
+                },
+                .escape => {
+                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
+                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
+                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
+                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
+                        history.cursor_idx = 0;
+                        paths.cursor_idx = 0;
+                    } else if (textbox.key_buffer.items.len > 0) {
+                        textbox.key_buffer.clearRetainingCapacity();
+                    } else {
+                        root_zmenu.end();
+                    }
+                },
+                else => {},
+            },
+        }
+        return true;
+    }
+
+    fn exec(cmd: []const u8) !noreturn {
+        var argv = cmd;
+        var argv_buf: [2048]u8 = undefined;
+        if (cmd[0] != '/') {
+            argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
+        }
+
+        std.process.execve(
+            std.heap.page_allocator,
+            &[1][]const u8{argv},
+            null,
+        ) catch @panic("oopsies");
+    }
 };
 
 const UiCommandBox = struct {
@@ -256,24 +312,8 @@ const UiCommandBox = struct {
             .char => |chr| textbox.key_buffer.appendAssumeCapacity(chr),
             .ctrl => |ctrl| switch (ctrl) {
                 .backspace => _ = textbox.key_buffer.pop(),
-                .enter => {
-                    if (textbox.key_buffer.items.len > 0) {
-                        //if (std.posix.fork()) |pid| {
-                        //    if (pid == 0) {
-                        //        exec(zm.key_buffer.items) catch {};
-                        //    } else {
-                        //        zm.running = false;
-                        //    }
-                        //} else |_| @panic("everyone knows fork can't fail");
-                    }
-                },
-                .escape => {
-                    if (textbox.key_buffer.items.len > 0) {
-                        textbox.key_buffer.clearRetainingCapacity();
-                    } else {
-                        root_zmenu.end();
-                    }
-                },
+                .enter => {},
+                .escape => {},
                 else => {},
             },
         }
@@ -385,11 +425,6 @@ const UiHistoryOptions = struct {
 
             if (drawn > 4) break;
         }
-        //if (highlighted > drawn and drawn > 0) {
-        //    const y = box.y + 20 * (drawn - 1);
-        //    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
-        //    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
-        //}
         return drawn;
     }
 };
@@ -422,7 +457,6 @@ const UiExecOptions = struct {
             ui_key_buffer.items,
             box,
         ) catch @panic("drawing failed");
-        //exoptions.cursor_idx = @min(exoptions.cursor_idx, drawn) + exoptions.history_count;
         exoptions.drawn = drawn;
         return true;
     }
@@ -438,7 +472,6 @@ const UiExecOptions = struct {
             },
             else => {},
         }
-        //std.debug.print("exec keyevent {}\n", .{evt});
         return true;
     }
 

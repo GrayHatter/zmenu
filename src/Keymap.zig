@@ -4,6 +4,7 @@ const Keymap = @This();
 
 pub const Control = enum(u16) {
     escape = 1,
+    ctrl_left = 29,
     shift_left = 42,
     shift_right = 54,
     backspace = 14,
@@ -142,6 +143,7 @@ pub fn ascii(_: Keymap, key: u32, mods: Modifiers) ?u8 {
 pub fn ctrl(_: Keymap, key: u32) Control {
     return switch (key) {
         2...11 => .ascii_char,
+        29 => .ctrl_left,
         42 => .shift_left, // Left Shift
         54 => .shift_right, // Right Shift
         14 => .backspace, // Backspace
