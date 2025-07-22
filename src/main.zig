@@ -243,11 +243,12 @@ const UiCommandBox = struct {
         box = .xywh(35, 30, 600 - 35 * 2, 40);
         buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 10, .ash_gray);
         buffer.drawRectangleRounded(Buffer.ARGB, box, 10, .hookers_green);
-        box.x += 1;
-        box.w -= 2;
-        box.y += 1;
-        box.h -= 2;
+        box.add(.scale(1));
         buffer.drawRectangleRounded(Buffer.ARGB, box, 9, .hookers_green);
+        box.add(.scale(1));
+        buffer.drawRectangleRounded(Buffer.ARGB, box, 8, .hookers_green);
+        box.add(.scale(1));
+        buffer.drawRectangleRounded(Buffer.ARGB, box, 7, .hookers_green);
 
         if (textbox.key_buffer.items.len > 0) {
             drawText(

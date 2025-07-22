@@ -112,6 +112,22 @@ pub const Box = struct {
 
     pub const zero: Box = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
 
+    pub const Delta = struct {
+        x: isize,
+        y: isize,
+        w: isize,
+        h: isize,
+        pub const zero: Delta = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
+
+        pub fn scale(s: isize) Delta {
+            return .{ .x = s, .y = s, .w = s * -2, .h = s * -2 };
+        }
+
+        pub fn xywh(x: isize, y: isize, w: isize, h: isize) Delta {
+            return .{ .x = x, .y = y, .w = w, .h = h };
+        }
+    };
+
     pub inline fn x2(b: Box) usize {
         return b.x + b.w;
     }
@@ -134,6 +150,13 @@ pub const Box = struct {
 
     pub fn radius(x: usize, y: usize, r: usize) Box {
         return .{ .x = x, .y = y, .w = r, .h = r };
+    }
+
+    pub fn add(src: *Box, delta: Delta) void {
+        src.x = @intCast(@as(isize, @intCast(src.x)) + delta.x);
+        src.y = @intCast(@as(isize, @intCast(src.y)) + delta.y);
+        src.w = @intCast(@as(isize, @intCast(src.w)) + delta.w);
+        src.h = @intCast(@as(isize, @intCast(src.h)) + delta.h);
     }
 };
 
