@@ -213,8 +213,17 @@ const UiRoot = struct {
                     const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
                     const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
                     if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
-                        history.cursor_idx = 0;
-                        paths.cursor_idx = 0;
+                        const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
+                            paths.getExec(textbox.key_buffer.items, history.drawn);
+                        if (exe_string) |exe| {
+                            if (std.posix.fork()) |pid| {
+                                if (pid == 0) {
+                                    exec(exe) catch {};
+                                } else {
+                                    root_zmenu.running = false;
+                                }
+                            } else |_| @panic("everyone knows fork can't fail");
+                        }
                     } else if (textbox.key_buffer.items.len > 0) {
                         if (std.posix.fork()) |pid| {
                             if (pid == 0) {
@@ -427,6 +436,20 @@ const UiHistoryOptions = struct {
         }
         return drawn;
     }
+
+    fn getExec(hist: *UiHistoryOptions, str: []const u8) ?[]const u8 {
+        var idx: usize = 0;
+        if (hist.cursor_idx > command_history.len) return null;
+        for (command_history) |cmd| {
+            if (std.mem.startsWith(u8, cmd.text, str)) {
+                idx += 1;
+                if (idx == hist.cursor_idx) {
+                    return cmd.text;
+                }
+            }
+        }
+        return null;
+    }
 };
 const UiExecOptions = struct {
     alloc: Allocator,
@@ -503,6 +526,21 @@ const UiExecOptions = struct {
             buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
         }
         return drawn;
+    }
+    fn getExec(exc: *UiExecOptions, str: []const u8, hdrawn: usize) ?[]const u8 {
+        const cursor = exc.cursor_idx -| hdrawn;
+        if (cursor == 0) return null;
+        if (cursor > exc.drawn) return null;
+        var idx: usize = 0;
+        for (sys_exes.items) |exe| {
+            if (std.mem.startsWith(u8, exe, str)) {
+                idx += 1;
+                if (idx == cursor) {
+                    return exe;
+                }
+            }
+        }
+        return null;
     }
 };
 
