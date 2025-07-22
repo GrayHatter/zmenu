@@ -55,6 +55,15 @@ pub const Wayland = struct {
         if (w.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
     }
 
+    pub fn iterate(w: *Wayland) !void {
+        switch (w.display.dispatch()) {
+            .SUCCESS => {},
+            else => |wut| {
+                std.debug.print("Wayland Dispatch failed {}\n", .{wut});
+            },
+        }
+    }
+
     pub fn resize(w: *Wayland, box: Buffer.Box) !void {
         if (w.toplevel) |tl| {
             tl.setMaxSize(@intCast(box.w), @intCast(box.h));
@@ -117,9 +126,15 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
                         .backspace => _ = zm.key_buffer.pop(),
                         .enter => {
                             if (zm.key_buffer.items.len > 0) {
-                                exec(zm.key_buffer.items) catch {};
+                                if (std.posix.fork()) |pid| {
+                                    if (pid == 0) {
+                                        exec(zm.key_buffer.items) catch {};
+                                    } else {
+                                        zm.running = false;
+                                    }
+                                } else |_| @panic("everyone knows fork can't fail");
                             }
-                            zm.key_buffer.clearRetainingCapacity();
+                            //zm.key_buffer.clearRetainingCapacity();
                         },
                         .escape => zm.end(),
                         else => {},

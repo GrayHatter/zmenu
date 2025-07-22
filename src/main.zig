@@ -31,16 +31,16 @@ pub fn main() !void {
     var glyph_cache: Glyph.Cache = .init(14);
     defer glyph_cache.raze(alloc);
 
+    const dir = std.fs.cwd();
+    const commands: []Command = loadHistory(dir, alloc) catch |err| b: {
+        std.debug.print("error loading history {}\n", .{err});
+        break :b &.{};
+    };
+
     var i: usize = 0;
     var draw_count: usize = 0;
     while (zm.running) : (i +%= 1) {
-        switch (zm.wayland.display.dispatch()) {
-            .SUCCESS => {},
-            else => |w| {
-                std.debug.print("wut {}\n", .{w});
-                return error.DispatchFailed;
-            },
-        }
+        try zm.wayland.iterate();
         if (i % 1000 == 0) {
             surface.attach(buffer.buffer, 0, 0);
             surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
@@ -60,6 +60,10 @@ pub fn main() !void {
             surface.commit();
         }
     }
+
+    if (zm.key_buffer.items.len > 2) {
+        try writeOutHistory(dir, commands, zm.key_buffer.items);
+    }
 }
 
 pub const Options = struct {
@@ -67,7 +71,7 @@ pub const Options = struct {
 };
 
 fn loadRc(a: Allocator) !Options {
-    const rc = std.fs.cwd().readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
+    const rc = std.fs.cwd().readFileAlloc(a, ".zmenurc", 0x1ffff) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return err,
     };
@@ -81,7 +85,7 @@ fn loadRc(a: Allocator) !Options {
 
 pub const Command = struct {
     count: usize,
-    time: i64,
+    time: i64 = 0,
     text: []const u8,
 
     pub fn raze(c: Command, a: Allocator) void {
@@ -89,29 +93,53 @@ pub const Command = struct {
     }
 };
 
-fn loadHistory(a: Allocator) ![]Command {
-    const history = std.fs.cwd().readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
-        error.FileNotFound => return,
+fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
+    const history = dir.readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
+        error.FileNotFound => return &.{},
         else => return err,
     };
     defer a.free(history);
 
     const count = std.mem.count(u8, history, "\n");
-    const cmds = try a.alloc(Command, count);
+    const cmds: []Command = try a.alloc(Command, count);
 
-    // split lines
-    // parse header
-    // return list
-    for (history) |*h| {
-        _ = h;
+    var itr = std.mem.splitScalar(u8, history, '\n');
+    for (cmds) |*cmd| {
+        const line = itr.next() orelse return error.IteratorFailed;
+        if (std.mem.indexOfScalar(u8, line, ':')) |i| {
+            cmd.* = .{
+                .count = std.fmt.parseInt(usize, line[0..i], 10) catch return error.InvalidHitCount,
+                .text = try a.dupe(u8, line[i + 1 ..]),
+            };
+        } else return error.InvalidHistoryLine;
     }
     return cmds;
 }
 
-fn writeOutHistory(_: []Command) !void {
-    // write to tmp file
-    // remove existing
-    // mv tmp
+fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
+    var next: Command = .{
+        .count = 1,
+        .text = new,
+    };
+    for (cmds) |*cmd| {
+        if (std.mem.eql(u8, cmd.text, new)) {
+            cmd.count += 1;
+            next.count = 0;
+            break;
+        }
+    }
+    std.mem.sort(Command, cmds, {}, struct {
+        pub fn inner(_: void, l: Command, r: Command) bool {
+            return l.count < r.count;
+        }
+    }.inner);
+
+    var file = try dir.createFile(".zmenu_history.new", .{});
+    var w = file.writer();
+    for (cmds) |c| try w.print("{}:{s}\n", .{ c.count, c.text });
+    if (next.count > 0) try w.print("{}:{s}\n", .{ next.count, next.text });
+    file.close();
+    try dir.rename(".zmenu_history.new", ".zmenu_history");
 }
 
 fn drawText(
