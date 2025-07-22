@@ -9,15 +9,14 @@ pub fn main() !void {
     defer zm.raze();
     root_zmenu = &zm;
 
+    var ui_options_children = [_]ui.Component{
+        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
+        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
+    };
+
     var ui_children = [_]ui.Component{
-        .{
-            .vtable = .auto(UiCommandBox),
-            .children = &.{},
-        },
-        .{
-            .vtable = .auto(UiExecOptions),
-            .children = &.{},
-        },
+        .{ .vtable = .auto(UiCommandBox), .children = &.{} },
+        .{ .vtable = .auto(UiOptions), .children = &ui_options_children },
     };
 
     var root = ui.Component{
@@ -33,7 +32,6 @@ pub fn main() !void {
     const shm = zm.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
-    //try drawColors(size, buffer, colors);
 
     root.background(&buffer, box);
 
@@ -58,15 +56,12 @@ pub fn main() !void {
     defer glyph_cache.raze(alloc);
 
     const dir = std.fs.cwd();
-    const commands: []Command = loadHistory(dir, alloc) catch |err| b: {
+    command_history = loadHistory(dir, alloc) catch |err| b: {
         std.debug.print("error loading history {}\n", .{err});
         break :b &.{};
     };
 
-    const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
-
     _ = root.draw(&buffer, box);
-    _ = try drawHistory(alloc, &glyph_cache, &buffer, commands, "", ttf, history_box);
 
     surface.attach(buffer.buffer, 0, 0);
     surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
@@ -84,17 +79,7 @@ pub fn main() !void {
         if (ui_key_buffer.items.len != draw_count or root.damaged) {
             @branchHint(.unlikely);
             draw_count = ui_key_buffer.items.len;
-            //buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
-            //buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
-            //buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
-            //if (draw_count > 0) {
-            //    try drawText(alloc, &glyph_cache, &buffer, ui_key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
-            //}
-            const hist_drawn = try drawHistory(alloc, &glyph_cache, &buffer, commands, ui_key_buffer.items, ttf, history_box);
-            var path_box = history_box;
-            path_box.y += 20 * hist_drawn;
-            path_box.h -= 20 * hist_drawn;
-            _ = root.draw(&buffer, path_box);
+            _ = root.draw(&buffer, box);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
@@ -103,7 +88,7 @@ pub fn main() !void {
     }
 
     if (ui_key_buffer.items.len > 2) {
-        try writeOutHistory(dir, commands, ui_key_buffer.items);
+        try writeOutHistory(dir, command_history, ui_key_buffer.items);
     }
 }
 
@@ -112,6 +97,7 @@ var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
 var root_zmenu: *ZMenu = undefined;
+var command_history: []Command = undefined;
 
 pub const Options = struct {
     history: bool = true,
@@ -295,9 +281,108 @@ const UiCommandBox = struct {
     }
 };
 
+const UiOptions = struct {
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+        const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
+        buffer.drawRectangleFill(Buffer.ARGB, history_box, .alpha(.ash_gray, 0x7c));
+
+        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
+        const ret = comp.children[0].draw(buffer, history_box);
+
+        var path_box = history_box;
+        path_box.y += 20 * hist.drawn;
+        path_box.h -= 20 * hist.drawn;
+        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        _ = &path;
+        return comp.children[1].draw(buffer, path_box) or ret;
+    }
+};
+
+const UiHistoryOptions = struct {
+    alloc: Allocator,
+    highlight: usize = 0,
+    drawn: usize = 0,
+
+    pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
+        const options: *UiHistoryOptions = try a.create(UiHistoryOptions);
+        options.* = .{
+            .alloc = a,
+        };
+        comp.state = options;
+    }
+
+    pub fn raze(comp: *ui.Component, a: Allocator) void {
+        a.destroy(@as(*UiHistoryOptions, @alignCast(@ptrCast(comp.state))));
+    }
+
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
+
+        const drawn = drawHistory(
+            hist.alloc,
+            buffer,
+            hist.highlight,
+            command_history,
+            ui_key_buffer.items,
+            box,
+        ) catch @panic("drawing failed");
+        hist.highlight = @min(hist.highlight, drawn);
+        hist.drawn = drawn;
+        return true;
+    }
+
+    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+        if (evt.up) return false;
+        const highlight: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
+        switch (evt.key) {
+            .ctrl => |ctrl| switch (ctrl) {
+                .arrow_up => highlight.highlight -|= 1,
+                .arrow_down => highlight.highlight +|= 1,
+                else => {},
+            },
+            else => {},
+        }
+        //std.debug.print("exec keyevent {}\n", .{evt});
+        return true;
+    }
+
+    fn drawHistory(
+        a: Allocator,
+        buf: *const Buffer,
+        highlighted: usize,
+        cmds: []Command,
+        prefix: []const u8,
+        box: Buffer.Box,
+    ) !usize {
+        var fillbox = box;
+        fillbox.x -|= 5;
+        buf.drawRectangleFill(Buffer.ARGB, fillbox, .alpha(.ash_gray, 0x7c));
+        var drawn: usize = 0;
+        for (cmds) |cmd| {
+            const y = box.y + 20 + 20 * (drawn);
+            if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
+                try drawText(a, &glyph_cache, buf, cmd.text, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
+                drawn += 1;
+                if (drawn == highlighted) {
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
+                }
+            }
+
+            if (drawn > 4) break;
+        }
+        if (highlighted > drawn and drawn > 0) {
+            const y = box.y + 20 * (drawn - 1);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
+        }
+        return drawn;
+    }
+};
 const UiExecOptions = struct {
     alloc: Allocator,
     highlight: usize = 0,
+    drawn: usize = 0,
 
     pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
         const options: *UiExecOptions = try a.create(UiExecOptions);
@@ -323,6 +408,7 @@ const UiExecOptions = struct {
             box,
         ) catch @panic("drawing failed");
         highlight.highlight = @min(highlight.highlight, drawn);
+        highlight.drawn = drawn;
         return true;
     }
 
@@ -371,31 +457,6 @@ const UiExecOptions = struct {
         return drawn;
     }
 };
-
-fn drawHistory(
-    a: Allocator,
-    gc: *Glyph.Cache,
-    buf: *const Buffer,
-    cmds: []Command,
-    prefix: []const u8,
-    ttf: Ttf,
-    box: Buffer.Box,
-) !usize {
-    var fillbox = box;
-    fillbox.x -|= 5;
-    buf.drawRectangleFill(Buffer.ARGB, fillbox, .alpha(.ash_gray, 0x7c));
-    var drawn: usize = 0;
-    for (cmds) |cmd| {
-        const y = box.y + 20 + 20 * (drawn);
-        if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
-            try drawText(a, gc, buf, cmd.text, ttf, .xywh(box.x, y, box.w, 25));
-            drawn += 1;
-        }
-
-        if (drawn > 4) break;
-    }
-    return drawn;
-}
 
 fn drawText(
     alloc: Allocator,
