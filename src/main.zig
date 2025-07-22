@@ -220,6 +220,8 @@ const UiRoot = struct {
                                 if (pid == 0) {
                                     exec(exe) catch {};
                                 } else {
+                                    textbox.key_buffer.clearRetainingCapacity();
+                                    textbox.key_buffer.appendSliceAssumeCapacity(exe);
                                     root_zmenu.running = false;
                                 }
                             } else |_| @panic("everyone knows fork can't fail");
