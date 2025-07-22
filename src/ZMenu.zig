@@ -1,7 +1,6 @@
 wayland: Wayland,
 keymap: Keymap = .{},
 running: bool = true,
-key_buffer: std.ArrayListUnmanaged(u8),
 
 ui_root: *ui.Component = undefined,
 
@@ -81,7 +80,7 @@ pub const Event = union(enum) {
     pointer: wl.Pointer.Event,
 };
 
-pub fn init(a: Allocator) !ZMenu {
+pub fn init() !ZMenu {
     const display = try wl.Display.connect(null);
     const registry = try display.getRegistry();
     return .{
@@ -89,14 +88,12 @@ pub fn init(a: Allocator) !ZMenu {
             .display = display,
             .registry = registry,
         },
-        .key_buffer = try .initCapacity(a, 4096),
     };
 }
 
-pub fn raze(zm: *ZMenu, a: Allocator) void {
+pub fn raze(zm: *ZMenu) void {
     zm.wayland.raze();
     zm.keymap.raze();
-    zm.key_buffer.deinit(a);
 }
 
 pub fn initDmabuf(zm: *ZMenu) !void {
@@ -131,26 +128,25 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
                 });
                 switch (key.state) {
                     .pressed => {
-                        // todo bounds checking
-                        if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
-                            zm.key_buffer.appendAssumeCapacity(c);
-                        } else switch (zm.keymap.ctrl(key.key)) {
-                            .backspace => _ = zm.key_buffer.pop(),
-                            .enter => {
-                                if (zm.key_buffer.items.len > 0) {
-                                    if (std.posix.fork()) |pid| {
-                                        if (pid == 0) {
-                                            exec(zm.key_buffer.items) catch {};
-                                        } else {
-                                            zm.running = false;
-                                        }
-                                    } else |_| @panic("everyone knows fork can't fail");
-                                }
-                                //zm.key_buffer.clearRetainingCapacity();
-                            },
-                            .escape => zm.end(),
-                            else => {},
-                        }
+                        //if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
+                        //    zm.key_buffer.appendAssumeCapacity(c);
+                        //} else switch (zm.keymap.ctrl(key.key)) {
+                        //    .backspace => _ = zm.key_buffer.pop(),
+                        //    .enter => {
+                        //        if (zm.key_buffer.items.len > 0) {
+                        //            if (std.posix.fork()) |pid| {
+                        //                if (pid == 0) {
+                        //                    exec(zm.key_buffer.items) catch {};
+                        //                } else {
+                        //                    zm.running = false;
+                        //                }
+                        //            } else |_| @panic("everyone knows fork can't fail");
+                        //        }
+                        //        //zm.key_buffer.clearRetainingCapacity();
+                        //    },
+                        //    .escape => zm.end(),
+                        //    else => {},
+                        //}
                     },
                     .released => {},
                     else => |unk| {
@@ -169,9 +165,7 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
 }
 
 pub fn end(zm: *ZMenu) void {
-    if (zm.key_buffer.items.len > 0) {
-        zm.key_buffer.clearRetainingCapacity();
-    } else zm.running = false;
+    zm.running = false;
 }
 
 pub fn configure(_: *ZMenu, evt: Xdg.Toplevel.Event) void {
