@@ -86,6 +86,18 @@ pub const VTable = struct {
     keypress: ?KeyPress,
     mmove: ?MMove,
     mclick: ?MClick,
+
+    pub fn auto(comptime uicomp: type) VTable {
+        return .{
+            .init = if (@hasDecl(uicomp, "init")) uicomp.init else null,
+            .raze = if (@hasDecl(uicomp, "raze")) uicomp.raze else null,
+            .background = if (@hasDecl(uicomp, "background")) uicomp.background else null,
+            .draw = if (@hasDecl(uicomp, "draw")) uicomp.draw else null,
+            .keypress = if (@hasDecl(uicomp, "keyPress")) uicomp.keyPress else null,
+            .mmove = if (@hasDecl(uicomp, "mMove")) uicomp.mMove else null,
+            .mclick = if (@hasDecl(uicomp, "mClick")) uicomp.mClick else null,
+        };
+    }
 };
 
 pub const Init = *const fn (*Component, Allocator, Buffer.Box) InitError!void;

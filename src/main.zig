@@ -11,41 +11,17 @@ pub fn main() !void {
 
     var ui_children = [_]ui.Component{
         .{
-            .vtable = .{
-                .init = UiCommandBox.init,
-                .raze = UiCommandBox.raze,
-                .draw = UiCommandBox.draw,
-                .keypress = UiCommandBox.keyPress,
-                .background = null,
-                .mmove = null,
-                .mclick = null,
-            },
+            .vtable = .auto(UiCommandBox),
             .children = &.{},
         },
         .{
-            .vtable = .{
-                .init = UiExecOptions.init,
-                .raze = UiExecOptions.raze,
-                .draw = UiExecOptions.draw,
-                .keypress = UiExecOptions.keyPress,
-                .background = null,
-                .mmove = null,
-                .mclick = null,
-            },
+            .vtable = .auto(UiExecOptions),
             .children = &.{},
         },
     };
 
     var root = ui.Component{
-        .vtable = .{
-            .init = null,
-            .raze = null,
-            .background = drawBackground,
-            .draw = null,
-            .keypress = null,
-            .mmove = null,
-            .mclick = null,
-        },
+        .vtable = .auto(UiRoot),
         .box = box,
         .children = &ui_children,
     };
@@ -235,9 +211,11 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
     }
 }
 
-fn drawBackground(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
-    b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
-}
+const UiRoot = struct {
+    pub fn background(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
+        b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
+    }
+};
 
 const UiCommandBox = struct {
     alloc: Allocator,
@@ -284,7 +262,7 @@ const UiCommandBox = struct {
         return true;
     }
 
-    fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
         if (evt.up) return false;
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
@@ -337,19 +315,17 @@ const UiExecOptions = struct {
 
         const drawn = drawPathlist(
             highlight.alloc,
-            &glyph_cache,
             buffer,
             highlight.highlight,
             sys_exes.items,
             ui_key_buffer.items,
-            ttf_ptr.*,
             box,
         ) catch @panic("drawing failed");
         highlight.highlight = @min(highlight.highlight, drawn);
         return true;
     }
 
-    fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
         if (evt.up) return false;
         const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
@@ -366,12 +342,10 @@ const UiExecOptions = struct {
 
     fn drawPathlist(
         a: Allocator,
-        gc: *Glyph.Cache,
         buf: *const Buffer,
         highlighted: usize,
         bins: []const []const u8,
         prefix: []const u8,
-        ttf: Ttf,
         box: Buffer.Box,
     ) !usize {
         if (prefix.len == 0 or bins.len == 0) return 0;
@@ -379,7 +353,7 @@ const UiExecOptions = struct {
         for (bins) |bin| {
             const y = box.y + 20 + 20 * (drawn);
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
-                try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
+                try drawText(a, &glyph_cache, buf, bin, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
                 drawn += 1;
                 if (drawn == highlighted) {
                     buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);

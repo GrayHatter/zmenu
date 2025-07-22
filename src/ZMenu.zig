@@ -127,27 +127,7 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
                     .mods = mods,
                 });
                 switch (key.state) {
-                    .pressed => {
-                        //if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
-                        //    zm.key_buffer.appendAssumeCapacity(c);
-                        //} else switch (zm.keymap.ctrl(key.key)) {
-                        //    .backspace => _ = zm.key_buffer.pop(),
-                        //    .enter => {
-                        //        if (zm.key_buffer.items.len > 0) {
-                        //            if (std.posix.fork()) |pid| {
-                        //                if (pid == 0) {
-                        //                    exec(zm.key_buffer.items) catch {};
-                        //                } else {
-                        //                    zm.running = false;
-                        //                }
-                        //            } else |_| @panic("everyone knows fork can't fail");
-                        //        }
-                        //        //zm.key_buffer.clearRetainingCapacity();
-                        //    },
-                        //    .escape => zm.end(),
-                        //    else => {},
-                        //}
-                    },
+                    .pressed => {},
                     .released => {},
                     else => |unk| {
                         if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
