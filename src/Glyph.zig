@@ -282,7 +282,6 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !R
             for (c.components) |com| {
                 const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
                 const next = try ttf.glyf.glyph(alloc, start, end);
-                std.debug.print("x {} y {}\n", .{ com.arg0, com.arg1 });
                 if (next.glyph != .simple) @panic("something's fucky");
                 try next.glyph.simple.renderSize(bbox, &canvas, .{
                     .x_offset = com.arg0,
@@ -373,8 +372,6 @@ pub const Table = struct {
             });
             if (!flags.more_components) break;
         }
-
-        for (clist.items) |i| std.debug.print("{}\n", .{i});
 
         return .{ .components = try clist.toOwnedSlice() };
     }

@@ -122,7 +122,7 @@ fn drawText(
     ttf: Ttf,
     box: Buffer.Box,
 ) !void {
-    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 14);
+    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 18);
     defer layout_helper.glyphs.deinit();
     while (try layout_helper.step(ttf)) {}
 
