@@ -36,7 +36,7 @@ pub fn clampY(self: Canvas, val: i64) usize {
 }
 
 pub fn clampX(self: Canvas, val: i64) usize {
-    return @intCast(std.math.clamp(val, 0, self.iWidth()));
+    return @intCast(std.math.clamp(val, 0, self.iWidth() - 1));
 }
 
 fn getRow(c: Canvas, y: i64) ?[]u8 {
@@ -49,17 +49,11 @@ pub fn draw(c: Canvas, y_int: i64, min_int: i64, max_int: i64) void {
     var y: f64 = @floatFromInt(y_int);
     var min: f64 = @floatFromInt(min_int);
     var max: f64 = @floatFromInt(max_int);
-    const contra: u8 = if (@floor(y * c.scale) != @round(y * c.scale)) 0xAA else 0xFF;
     // Floor seems to look better, but I want to experment more
-    if (comptime false) {
-        y = @floor(y * c.scale);
-        min = @floor(min * c.scale);
-        max = @floor(max * c.scale);
-    } else {
-        y = @round(y * c.scale);
-        min = @round(min * c.scale);
-        max = @round(max * c.scale);
-    }
+    y = y * c.scale;
+    min = @round(min * c.scale);
+    max = @max(@floor(max * c.scale), min);
+    const contra: u8 = @intFromFloat(@round((y - @trunc(y)) * 255.0));
 
     const x1: usize = c.clampX(@intFromFloat(min));
     const x2: usize = c.clampX(@intFromFloat(max));

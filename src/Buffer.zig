@@ -372,8 +372,8 @@ pub fn drawFont(b: Buffer, T: type, color: T, box: Box, src: []const u8) void {
         for (box.x..box.x + box.w, 0..) |dx, sx| {
             const p: u8 = src[(box.h - 1 - sy) * box.w + sx];
             if (p == 0) continue;
-            const pixel: u32 = @intFromEnum(color);
-            row[dx] = pixel;
+            const color2 = color.alpha(p);
+            color2.mix(&row[dx]);
         }
     }
 }

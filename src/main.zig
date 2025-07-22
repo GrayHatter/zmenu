@@ -62,6 +62,58 @@ pub fn main() !void {
     }
 }
 
+pub const Options = struct {
+    history: bool = true,
+};
+
+fn loadRc(a: Allocator) !Options {
+    const rc = std.fs.cwd().readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer a.free(rc);
+    // split lines
+    // parse line
+    // return options
+
+    return .{};
+}
+
+pub const Command = struct {
+    count: usize,
+    time: i64,
+    text: []const u8,
+
+    pub fn raze(c: Command, a: Allocator) void {
+        a.free(c.text);
+    }
+};
+
+fn loadHistory(a: Allocator) ![]Command {
+    const history = std.fs.cwd().readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer a.free(history);
+
+    const count = std.mem.count(u8, history, "\n");
+    const cmds = try a.alloc(Command, count);
+
+    // split lines
+    // parse header
+    // return list
+    for (history) |*h| {
+        _ = h;
+    }
+    return cmds;
+}
+
+fn writeOutHistory(_: []Command) !void {
+    // write to tmp file
+    // remove existing
+    // mv tmp
+}
+
 fn drawText(
     alloc: Allocator,
     cache: *Glyph.Cache,
