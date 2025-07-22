@@ -3,7 +3,7 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     var zm: ZMenu = try .init(alloc);
-    const box: Buffer.Box = .wh(600, 180);
+    const box: Buffer.Box = .wh(600, 480);
 
     try zm.wayland.init(box);
     defer zm.raze(alloc);
@@ -18,6 +18,11 @@ pub fn main() !void {
     buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
 
     try zm.wayland.roundtrip();
+
+    const paths = [_][]const u8{"/usr/bin"};
+    var sys_exes: std.ArrayListUnmanaged([]const u8) = try .initCapacity(alloc, 4096);
+    var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, &paths });
+    defer thread.join();
 
     const surface = zm.wayland.surface orelse return error.NoSurface;
     surface.attach(buffer.buffer, 0, 0);
@@ -39,7 +44,8 @@ pub fn main() !void {
 
     const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
 
-    try drawHistory(alloc, &glyph_cache, &buffer, commands, "", ttf, history_box);
+    _ = try drawHistory(alloc, &glyph_cache, &buffer, commands, "", ttf, history_box);
+
     surface.attach(buffer.buffer, 0, 0);
     surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
     surface.commit();
@@ -62,7 +68,11 @@ pub fn main() !void {
             if (draw_count > 0) {
                 try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
             }
-            try drawHistory(alloc, &glyph_cache, &buffer, commands, zm.key_buffer.items, ttf, history_box);
+            const hist_drawn = try drawHistory(alloc, &glyph_cache, &buffer, commands, zm.key_buffer.items, ttf, history_box);
+            var path_box = history_box;
+            path_box.y += 20 * hist_drawn;
+            path_box.h -= 20 * hist_drawn;
+            _ = try drawPathlist(alloc, &glyph_cache, &buffer, sys_exes.items, zm.key_buffer.items, ttf, path_box);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
@@ -151,6 +161,49 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
     try dir.rename(".zmenu_history.new", ".zmenu_history");
 }
 
+/// Paths must be absolute
+fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []const []const u8) void {
+    for (paths) |path| {
+        var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| {
+            std.debug.print("Unable to open path '{s}' because {}\n", .{ path, err });
+            continue;
+        };
+        defer dir.close();
+        var ditr = dir.iterate();
+
+        while (ditr.next() catch |err| {
+            std.debug.print("Unable to iterate on path '{s}' because {}\n", .{ path, err });
+            break;
+        }) |file| switch (file.kind) {
+            .file => list.append(a, a.dupe(u8, file.name) catch @panic("OOM")) catch @panic("OOM"),
+            else => {},
+        };
+        std.Thread.yield() catch {};
+    }
+}
+
+fn drawPathlist(
+    a: Allocator,
+    gc: *Glyph.Cache,
+    buf: *const Buffer,
+    bins: []const []const u8,
+    prefix: []const u8,
+    ttf: Ttf,
+    box: Buffer.Box,
+) !usize {
+    if (prefix.len == 0 or bins.len == 0) return 0;
+    var drawn: usize = 0;
+    for (bins) |bin| {
+        const y = box.y + 20 + 20 * (drawn);
+        if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
+            try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
+            drawn += 1;
+        }
+        if (drawn > 4) break;
+    }
+    return drawn;
+}
+
 fn drawHistory(
     a: Allocator,
     gc: *Glyph.Cache,
@@ -159,15 +212,19 @@ fn drawHistory(
     prefix: []const u8,
     ttf: Ttf,
     box: Buffer.Box,
-) !void {
+) !usize {
     buf.drawRectangleFill(Buffer.ARGB, box, .alpha(.ash_gray, 0x7c));
-    var skipped: usize = 0;
-    for (cmds, 0..) |cmd, cmd_idx| {
-        const y = box.y + 20 + 20 * (cmd_idx - skipped);
+    var drawn: usize = 0;
+    for (cmds) |cmd| {
+        const y = box.y + 20 + 20 * (drawn);
         if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
             try drawText(a, gc, buf, cmd.text, ttf, .xywh(box.x, y, box.w, 25));
-        } else skipped += 1;
+            drawn += 1;
+        }
+
+        if (drawn > 4) break;
     }
+    return drawn;
 }
 
 fn drawText(

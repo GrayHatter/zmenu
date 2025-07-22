@@ -9,6 +9,12 @@ pub const Control = enum(u16) {
     backspace = 14,
     enter = 28,
     meta = 125,
+
+    arrow_up = 103,
+    arrow_down = 108,
+    arrow_left = 105,
+    arrow_right = 106,
+
     ascii_char,
 
     UNKNOWN = 0,
@@ -113,6 +119,10 @@ pub fn ascii(_: Keymap, key: u32, mods: Modifiers) ?u8 {
         14 => .{ null, null, null, null }, // Backspace,
         28 => .{ null, null, null, null }, // Enter,
         125 => .{ null, null, null, null }, // Meta,
+        103 => .{ null, null, null, null }, // Up,
+        108 => .{ null, null, null, null }, // Down,
+        105 => .{ null, null, null, null }, // Left,
+        106 => .{ null, null, null, null }, // Right,
         1 => .{ null, null, null, null }, //
         else => {
             std.debug.print("Unable to translate ascii {}\n", .{key});
@@ -138,6 +148,10 @@ pub fn ctrl(_: Keymap, key: u32) Control {
         28 => .enter, // Enter
         125 => .meta, // Meta
         1 => .escape,
+        103 => .arrow_up,
+        108 => .arrow_down,
+        105 => .arrow_left,
+        106 => .arrow_right,
         else => {
             std.debug.print("Unable to translate  ctrl {}\n", .{key});
             return .UNKNOWN;
