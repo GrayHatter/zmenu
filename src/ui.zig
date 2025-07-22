@@ -6,47 +6,68 @@ pub const Component = struct {
     children: []Component,
 
     pub fn init(comp: *Component, a: Allocator, box: Buffer.Box) InitError!void {
-        if (comp.vtable.init) |func| try func(comp, a, box);
-        for (comp.children) |*child| try child.init(a, box);
+        if (comp.vtable.init) |func| {
+            try func(comp, a, box);
+        } else {
+            for (comp.children) |*child| try child.init(a, box);
+        }
     }
 
     pub fn raze(comp: *Component, a: Allocator) void {
-        if (comp.vtable.raze) |raze_| raze_(comp, a);
-        for (comp.children) |*child| child.raze(a);
+        if (comp.vtable.raze) |raze_| {
+            raze_(comp, a);
+        } else {
+            for (comp.children) |*child| child.raze(a);
+        }
     }
 
     pub fn background(comp: *Component, buffer: *const Buffer, box: Buffer.Box) void {
-        if (comp.vtable.background) |bg| bg(comp, buffer, box);
-        for (comp.children) |*child| child.background(buffer, box);
+        if (comp.vtable.background) |bg| {
+            bg(comp, buffer, box);
+        } else {
+            for (comp.children) |*child| child.background(buffer, box);
+        }
     }
 
     pub fn draw(comp: *Component, buffer: *const Buffer, box: Buffer.Box) bool {
-        if (comp.vtable.draw) |draw_| _ = draw_(comp, buffer, box);
-        for (comp.children) |*child| {
-            _ = child.draw(buffer, box);
+        if (comp.vtable.draw) |draw_| {
+            _ = draw_(comp, buffer, box);
+        } else {
+            for (comp.children) |*child| {
+                _ = child.draw(buffer, box);
+            }
         }
 
         return comp.damaged;
     }
 
     pub fn keyPress(comp: *Component, evt: KeyEvent) bool {
-        if (comp.vtable.keypress) |kp| comp.damaged = kp(comp, evt);
-        for (comp.children) |*child| {
-            _ = child.keyPress(evt);
-            comp.damaged = comp.damaged or child.damaged;
+        if (comp.vtable.keypress) |kp| {
+            comp.damaged = kp(comp, evt);
+        } else {
+            for (comp.children) |*child| {
+                _ = child.keyPress(evt);
+                comp.damaged = comp.damaged or child.damaged;
+            }
         }
 
         return false;
     }
 
     pub fn mMove(comp: *Component, mmove: Mouse.Movement, box: Buffer.Box) void {
-        if (comp.vtable.mmove) |mmove_| mmove_(comp, mmove, box);
-        for (comp.children) |*child| background(child, mmove, box);
+        if (comp.vtable.mmove) |mmove_| {
+            mmove_(comp, mmove, box);
+        } else {
+            for (comp.children) |*child| background(child, mmove, box);
+        }
     }
 
     pub fn mClick(comp: *Component, mclick: Mouse.Click, box: Buffer.Box) bool {
-        if (comp.vtable.mclick) |mclick_| mclick_(comp, mclick, box);
-        for (comp.children) |*child| background(child, mclick, box);
+        if (comp.vtable.mclick) |mclick_| {
+            mclick_(comp, mclick, box);
+        } else {
+            for (comp.children) |*child| background(child, mclick, box);
+        }
 
         return false;
     }
