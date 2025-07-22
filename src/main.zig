@@ -37,6 +37,13 @@ pub fn main() !void {
         break :b &.{};
     };
 
+    const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
+
+    try drawHistory(alloc, &glyph_cache, &buffer, commands, "", ttf, history_box);
+    surface.attach(buffer.buffer, 0, 0);
+    surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
+    surface.commit();
+
     var i: usize = 0;
     var draw_count: usize = 0;
     while (zm.running) : (i +%= 1) {
@@ -55,6 +62,7 @@ pub fn main() !void {
             if (draw_count > 0) {
                 try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
             }
+            try drawHistory(alloc, &glyph_cache, &buffer, commands, zm.key_buffer.items, ttf, history_box);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
@@ -107,9 +115,10 @@ fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
     for (cmds) |*cmd| {
         const line = itr.next() orelse return error.IteratorFailed;
         if (std.mem.indexOfScalar(u8, line, ':')) |i| {
+            const text_i = std.mem.indexOfScalarPos(u8, line, i + 1, ':') orelse i;
             cmd.* = .{
                 .count = std.fmt.parseInt(usize, line[0..i], 10) catch return error.InvalidHitCount,
-                .text = try a.dupe(u8, line[i + 1 ..]),
+                .text = try a.dupe(u8, line[text_i + 1 ..]),
             };
         } else return error.InvalidHistoryLine;
     }
@@ -130,16 +139,35 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
     }
     std.mem.sort(Command, cmds, {}, struct {
         pub fn inner(_: void, l: Command, r: Command) bool {
-            return l.count < r.count;
+            return l.count >= r.count;
         }
     }.inner);
 
     var file = try dir.createFile(".zmenu_history.new", .{});
     var w = file.writer();
-    for (cmds) |c| try w.print("{}:{s}\n", .{ c.count, c.text });
-    if (next.count > 0) try w.print("{}:{s}\n", .{ next.count, next.text });
+    for (cmds) |c| try w.print("{}::{s}\n", .{ c.count, c.text });
+    if (next.count > 0) try w.print("{}::{s}\n", .{ next.count, next.text });
     file.close();
     try dir.rename(".zmenu_history.new", ".zmenu_history");
+}
+
+fn drawHistory(
+    a: Allocator,
+    gc: *Glyph.Cache,
+    buf: *const Buffer,
+    cmds: []Command,
+    prefix: []const u8,
+    ttf: Ttf,
+    box: Buffer.Box,
+) !void {
+    buf.drawRectangleFill(Buffer.ARGB, box, .alpha(.ash_gray, 0x7c));
+    var skipped: usize = 0;
+    for (cmds, 0..) |cmd, cmd_idx| {
+        const y = box.y + 20 + 20 * (cmd_idx - skipped);
+        if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
+            try drawText(a, gc, buf, cmd.text, ttf, .xywh(box.x, y, box.w, 25));
+        } else skipped += 1;
+    }
 }
 
 fn drawText(
@@ -150,7 +178,7 @@ fn drawText(
     ttf: Ttf,
     box: Buffer.Box,
 ) !void {
-    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 18);
+    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 14);
     defer layout_helper.glyphs.deinit();
     while (try layout_helper.step(ttf)) {}
 

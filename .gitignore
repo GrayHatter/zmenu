@@ -3,3 +3,5 @@ zig-out/*
 fonts/*.zip
 fonts/*.ttf
 font.ttf
+.zmenu_history
+.zmenu_history.new
