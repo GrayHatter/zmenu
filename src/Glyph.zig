@@ -133,7 +133,7 @@ pub const Compound = struct {
         args_are_words: bool,
         args_are_xy: bool,
         round_xy_to_grid: bool,
-        single_scale: bool,
+        comp_has_scale: bool,
         _obsolete: bool,
         more_components: bool,
         x_and_y_scales: bool,
@@ -186,9 +186,9 @@ pub const Compound = struct {
     }
 
     fn getTransform(f: Flags, rp: *RuntimeParser) Transform {
-        if (!f.single_scale) return .{ .scale = 1 };
+        if (!f.comp_has_scale and !f.x_and_y_scales and !f.two_by_two_scales) return .{ .scale = 1 };
 
-        if (f.single_scale) {
+        if (f.comp_has_scale) {
             std.debug.assert(!f.x_and_y_scales);
             std.debug.assert(!f.two_by_two_scales);
 
@@ -198,7 +198,7 @@ pub const Compound = struct {
             } };
         }
         if (f.x_and_y_scales) {
-            std.debug.assert(!f.single_scale);
+            std.debug.assert(!f.comp_has_scale);
             std.debug.assert(!f.two_by_two_scales);
             return .{ .xy_scale = .{
                 .x = rp.readVal(u16),
@@ -206,7 +206,7 @@ pub const Compound = struct {
             } };
         }
         if (f.two_by_two_scales) {
-            std.debug.assert(!f.single_scale);
+            std.debug.assert(!f.comp_has_scale);
             std.debug.assert(!f.two_by_two_scales);
             return .{ .xy_twoby = .{
                 .x = rp.readVal(u16),
