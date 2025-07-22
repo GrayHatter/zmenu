@@ -293,14 +293,29 @@ const UiOptions = struct {
         path_box.y += 20 * hist.drawn;
         path_box.h -= 20 * hist.drawn;
         const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
-        _ = &path;
+        path.history_count = hist.drawn;
+
+        const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
+        hist.cursor_idx = cursor;
+        path.cursor_idx = cursor;
         return comp.children[1].draw(buffer, path_box) or ret;
+    }
+
+    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+        for (comp.children) |*c| _ = c.keyPress(evt);
+
+        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
+        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
+        hist.cursor_idx = cursor;
+        path.cursor_idx = cursor;
+        return true;
     }
 };
 
 const UiHistoryOptions = struct {
     alloc: Allocator,
-    highlight: usize = 0,
+    cursor_idx: usize = 0,
     drawn: usize = 0,
 
     pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
@@ -321,23 +336,22 @@ const UiHistoryOptions = struct {
         const drawn = drawHistory(
             hist.alloc,
             buffer,
-            hist.highlight,
+            hist.cursor_idx,
             command_history,
             ui_key_buffer.items,
             box,
         ) catch @panic("drawing failed");
-        hist.highlight = @min(hist.highlight, drawn);
         hist.drawn = drawn;
         return true;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
         if (evt.up) return false;
-        const highlight: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
+        const histopt: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
             .ctrl => |ctrl| switch (ctrl) {
-                .arrow_up => highlight.highlight -|= 1,
-                .arrow_down => highlight.highlight +|= 1,
+                .arrow_up => histopt.cursor_idx -|= 1,
+                .arrow_down => histopt.cursor_idx +|= 1,
                 else => {},
             },
             else => {},
@@ -371,17 +385,18 @@ const UiHistoryOptions = struct {
 
             if (drawn > 4) break;
         }
-        if (highlighted > drawn and drawn > 0) {
-            const y = box.y + 20 * (drawn - 1);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
-        }
+        //if (highlighted > drawn and drawn > 0) {
+        //    const y = box.y + 20 * (drawn - 1);
+        //    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
+        //    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
+        //}
         return drawn;
     }
 };
 const UiExecOptions = struct {
     alloc: Allocator,
-    highlight: usize = 0,
+    cursor_idx: usize = 0,
+    history_count: usize = 0,
     drawn: usize = 0,
 
     pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
@@ -397,28 +412,28 @@ const UiExecOptions = struct {
     }
 
     pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
-        const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
+        const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
 
         const drawn = drawPathlist(
-            highlight.alloc,
+            exoptions.alloc,
             buffer,
-            highlight.highlight,
+            exoptions.cursor_idx -| exoptions.history_count,
             sys_exes.items,
             ui_key_buffer.items,
             box,
         ) catch @panic("drawing failed");
-        highlight.highlight = @min(highlight.highlight, drawn);
-        highlight.drawn = drawn;
+        //exoptions.cursor_idx = @min(exoptions.cursor_idx, drawn) + exoptions.history_count;
+        exoptions.drawn = drawn;
         return true;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
         if (evt.up) return false;
-        const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
+        const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
             .ctrl => |ctrl| switch (ctrl) {
-                .arrow_up => highlight.highlight -|= 1,
-                .arrow_down => highlight.highlight +|= 1,
+                .arrow_up => exoptions.cursor_idx -|= 1,
+                .arrow_down => exoptions.cursor_idx +|= 1,
                 else => {},
             },
             else => {},
