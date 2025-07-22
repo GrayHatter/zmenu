@@ -3,6 +3,8 @@ keymap: Keymap = .{},
 running: bool = true,
 key_buffer: std.ArrayListUnmanaged(u8),
 
+ui_root: *ui.Component = undefined,
+
 const ZMenu = @This();
 
 pub const Wayland = struct {
@@ -203,6 +205,7 @@ const Allocator = std.mem.Allocator;
 
 const Buffer = @import("Buffer.zig");
 const Keymap = @import("Keymap.zig");
+const ui = @import("ui.zig");
 
 const listeners = @import("listeners.zig").Listeners(ZMenu);
 

@@ -8,14 +8,29 @@ pub fn main() !void {
     try zm.wayland.init(box);
     defer zm.raze(alloc);
 
+    var root = ui.Component{
+        .vtable = .{
+            .init = null,
+            .raze = null,
+            .background = drawBackground,
+            .draw = null,
+            .keypress = null,
+            .mmove = null,
+            .mclick = null,
+        },
+        .box = box,
+        .children = &.{},
+    };
+    zm.ui_root = &root;
+
+    try root.init(box);
+
     const shm = zm.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
     //try drawColors(size, buffer, colors);
-    buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
-    buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
-    buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
-    buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
+
+    root.background(&buffer, box);
 
     try zm.wayland.roundtrip();
 
@@ -182,6 +197,13 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
     }
 }
 
+fn drawBackground(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
+    b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
+    b.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
+    b.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
+    b.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
+}
+
 fn drawPathlist(
     a: Allocator,
     gc: *Glyph.Cache,
@@ -298,6 +320,7 @@ const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
 const ZMenu = @import("ZMenu.zig");
+const ui = @import("ui.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
