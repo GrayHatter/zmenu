@@ -119,33 +119,44 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
     const debug_events = false;
     switch (event) {
         .key => |k| switch (k) {
-            .key => |key| switch (key.state) {
-                .pressed => {
-                    // todo bounds checking
-                    if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
-                        zm.key_buffer.appendAssumeCapacity(c);
-                    } else switch (zm.keymap.ctrl(key.key)) {
-                        .backspace => _ = zm.key_buffer.pop(),
-                        .enter => {
-                            if (zm.key_buffer.items.len > 0) {
-                                if (std.posix.fork()) |pid| {
-                                    if (pid == 0) {
-                                        exec(zm.key_buffer.items) catch {};
-                                    } else {
-                                        zm.running = false;
-                                    }
-                                } else |_| @panic("everyone knows fork can't fail");
-                            }
-                            //zm.key_buffer.clearRetainingCapacity();
-                        },
-                        .escape => zm.end(),
-                        else => {},
-                    }
-                },
-                .released => {},
-                else => |unk| {
-                    if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
-                },
+            .key => |key| {
+                const mods: Keymap.Modifiers = .init(zm.wayland.hid.mods);
+                _ = zm.ui_root.keyPress(.{
+                    .up = key.state == .released,
+                    .key = if (zm.keymap.ascii(key.key, mods)) |asc|
+                        .{ .char = asc }
+                    else
+                        .{ .ctrl = zm.keymap.ctrl(key.key) },
+                    .mods = mods,
+                });
+                switch (key.state) {
+                    .pressed => {
+                        // todo bounds checking
+                        if (zm.keymap.ascii(key.key, .init(zm.wayland.hid.mods))) |c| {
+                            zm.key_buffer.appendAssumeCapacity(c);
+                        } else switch (zm.keymap.ctrl(key.key)) {
+                            .backspace => _ = zm.key_buffer.pop(),
+                            .enter => {
+                                if (zm.key_buffer.items.len > 0) {
+                                    if (std.posix.fork()) |pid| {
+                                        if (pid == 0) {
+                                            exec(zm.key_buffer.items) catch {};
+                                        } else {
+                                            zm.running = false;
+                                        }
+                                    } else |_| @panic("everyone knows fork can't fail");
+                                }
+                                //zm.key_buffer.clearRetainingCapacity();
+                            },
+                            .escape => zm.end(),
+                            else => {},
+                        }
+                    },
+                    .released => {},
+                    else => |unk| {
+                        if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
+                    },
+                }
             },
             .modifiers => {
                 zm.wayland.hid.mods = k.modifiers.mods_depressed;

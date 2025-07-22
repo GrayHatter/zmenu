@@ -15,8 +15,8 @@ pub fn main() !void {
                 .init = UiExecOptions.init,
                 .raze = UiExecOptions.raze,
                 .draw = UiExecOptions.draw,
+                .keypress = UiExecOptions.keyPress,
                 .background = null,
-                .keypress = null,
                 .mmove = null,
                 .mclick = null,
             },
@@ -92,7 +92,7 @@ pub fn main() !void {
             surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
         }
-        if (zm.key_buffer.items.len != draw_count) {
+        if (zm.key_buffer.items.len != draw_count or root.damaged) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
             buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .ash_gray);
@@ -106,10 +106,10 @@ pub fn main() !void {
             path_box.y += 20 * hist_drawn;
             path_box.h -= 20 * hist_drawn;
             _ = root.draw(&buffer, path_box);
-            //_ = try drawPathlist(alloc, &glyph_cache, &buffer, sys_exes.items, zm.key_buffer.items, ttf, path_box);
             surface.attach(buffer.buffer, 0, 0);
             surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
             surface.commit();
+            root.painted();
         }
     }
 
@@ -247,7 +247,7 @@ const UiExecOptions = struct {
     pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
         const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
 
-        _ = drawPathlist(
+        const drawn = drawPathlist(
             highlight.alloc,
             &glyph_cache,
             buffer,
@@ -257,6 +257,22 @@ const UiExecOptions = struct {
             ttf_ptr.*,
             box,
         ) catch @panic("drawing failed");
+        highlight.highlight = @min(highlight.highlight, drawn);
+        return true;
+    }
+
+    fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+        if (!evt.up) return false;
+        const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
+        switch (evt.key) {
+            .ctrl => |ctrl| switch (ctrl) {
+                .arrow_up => highlight.highlight -|= 1,
+                .arrow_down => highlight.highlight +|= 1,
+                else => {},
+            },
+            else => {},
+        }
+        //std.debug.print("exec keyevent {}\n", .{evt});
         return true;
     }
 
@@ -277,10 +293,17 @@ const UiExecOptions = struct {
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
                 try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
                 drawn += 1;
-                if (drawn == highlighted)
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x, y, box.w, 25), 10, .hookers_green);
+                if (drawn == highlighted) {
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .red);
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .red);
+                }
             }
-            if (drawn > 4) break;
+            if (drawn > 6) break;
+        }
+        if (highlighted > drawn and drawn > 0) {
+            const y = box.y + 20 * (drawn - 1);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .red);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .red);
         }
         return drawn;
     }
@@ -295,7 +318,9 @@ fn drawHistory(
     ttf: Ttf,
     box: Buffer.Box,
 ) !usize {
-    buf.drawRectangleFill(Buffer.ARGB, box, .alpha(.ash_gray, 0x7c));
+    var fillbox = box;
+    fillbox.x -|= 5;
+    buf.drawRectangleFill(Buffer.ARGB, fillbox, .alpha(.ash_gray, 0x7c));
     var drawn: usize = 0;
     for (cmds) |cmd| {
         const y = box.y + 20 + 20 * (drawn);

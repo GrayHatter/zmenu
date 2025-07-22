@@ -1,6 +1,7 @@
 pub const Component = struct {
     vtable: VTable,
     box: Buffer.Box = undefined,
+    damaged: bool = false,
     state: *anyopaque = undefined,
     children: []Component,
 
@@ -21,14 +22,19 @@ pub const Component = struct {
 
     pub fn draw(comp: *Component, buffer: *const Buffer, box: Buffer.Box) bool {
         if (comp.vtable.draw) |draw_| _ = draw_(comp, buffer, box);
-        for (comp.children) |*child| _ = child.draw(buffer, box);
+        for (comp.children) |*child| {
+            _ = child.draw(buffer, box);
+        }
 
-        return false;
+        return comp.damaged;
     }
 
-    pub fn keyPress(comp: *Component, evt: KeyEvent, box: Buffer.Box) bool {
-        if (comp.vtable.keypress) |kp| kp(comp, evt, box);
-        for (comp.children) |*child| child.keyPress(evt, box);
+    pub fn keyPress(comp: *Component, evt: KeyEvent) bool {
+        if (comp.vtable.keypress) |kp| comp.damaged = kp(comp, evt);
+        for (comp.children) |*child| {
+            _ = child.keyPress(evt);
+            comp.damaged = comp.damaged or child.damaged;
+        }
 
         return false;
     }
@@ -43,6 +49,11 @@ pub const Component = struct {
         for (comp.children) |*child| background(child, mclick, box);
 
         return false;
+    }
+
+    pub fn painted(comp: *Component) void {
+        comp.damaged = false;
+        for (comp.children) |*child| child.painted();
     }
 };
 
