@@ -73,9 +73,7 @@ pub const Simple = struct {
         }
     };
 
-    pub fn renderSize(glyph: Simple, bbox: BBox, canvas: *Canvas, size: f32, u_per_em: usize) !void {
-        _ = size;
-        _ = u_per_em;
+    pub fn renderSize(glyph: Simple, bbox: BBox, canvas: *Canvas, ext: RenderExtra) !void {
         var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
         var iter = Glyph.Segment.Iterator.init(glyph);
         while (iter.next()) |item| {
@@ -84,7 +82,7 @@ pub const Simple = struct {
 
         var y = bbox.min_y;
         while (y < bbox.max_y) : (y += 1) {
-            const not_y: i64 = y - @as(isize, @intCast(bbox.min_y));
+            const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
             const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
 
             var winding_count: i64 = 0;
@@ -100,13 +98,22 @@ pub const Simple = struct {
                 }
                 // NOTE: Always see true first due to sorting
                 if (winding_count == 0) {
-                    const left = @min(start, point.x_pos);
-                    const right = @max(start, point.x_pos);
+                    const left = @min(start, point.x_pos) + ext.x_offset;
+                    const right = @max(start, point.x_pos) + ext.x_offset;
                     canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
                 }
             }
         }
     }
+};
+
+pub const RenderExtra = struct {
+    size: f32 = 1.0,
+    u_per_em: usize = 1,
+    /// TODO verify this is safe to be a i32 instead of i16 see also
+    /// `Compound.Component`
+    x_offset: i32 = 0,
+    y_offset: i32 = 0,
 };
 
 pub const Compound = struct {
@@ -151,11 +158,13 @@ pub const Compound = struct {
         },
     };
 
+    /// This pretends to match the layout, but because TTF says arg0,1 can be
+    /// i8 or u8 or i16 or u16, they're set i32 here to cover all cases
     pub const Component = struct {
         flag: Flags,
         index: u32,
-        arg0: u16,
-        arg1: u16,
+        arg0: i32,
+        arg1: i32,
         transform: Transform,
     };
 
@@ -253,7 +262,7 @@ pub const BBox = struct {
     }
 };
 
-pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, size: f32, u_per_em: usize) !RenderedGlyph {
+pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !RenderedGlyph {
 
     //const s = fontScale(size, @floatFromInt(u_per_em));
     var bbox = BBox{
@@ -267,14 +276,20 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, size: f32, u_per_em:
 
     switch (glyph.glyph) {
         .simple => |s| {
-            try s.renderSize(bbox, &canvas, size, u_per_em);
+            try s.renderSize(bbox, &canvas, ext);
         },
         .compound => |c| {
             for (c.components) |com| {
                 const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
                 const next = try ttf.glyf.glyph(alloc, start, end);
+                std.debug.print("x {} y {}\n", .{ com.arg0, com.arg1 });
                 if (next.glyph != .simple) @panic("something's fucky");
-                try next.glyph.simple.renderSize(bbox, &canvas, size, u_per_em);
+                try next.glyph.simple.renderSize(bbox, &canvas, .{
+                    .x_offset = com.arg0,
+                    .y_offset = com.arg1,
+                    .size = ext.size,
+                    .u_per_em = ext.u_per_em,
+                });
             }
         },
     }
@@ -344,10 +359,10 @@ pub const Table = struct {
         while (true) {
             const flags: Compound.Flags = @bitCast(runtime_parser.readVal(u16));
             const index: u16 = runtime_parser.readVal(u16);
-            const arg0: u16, const arg1: u16 = if (flags.args_are_words)
-                .{ runtime_parser.readVal(u16), runtime_parser.readVal(u16) }
+            const arg0: i16, const arg1: i16 = if (flags.args_are_words)
+                .{ runtime_parser.readVal(i16), runtime_parser.readVal(i16) }
             else
-                .{ runtime_parser.readVal(u8), runtime_parser.readVal(u8) };
+                .{ runtime_parser.readVal(i8), runtime_parser.readVal(i8) };
             const transform = Compound.getTransform(flags, &runtime_parser);
             try clist.append(.{
                 .flag = flags,
@@ -358,6 +373,8 @@ pub const Table = struct {
             });
             if (!flags.more_components) break;
         }
+
+        for (clist.items) |i| std.debug.print("{}\n", .{i});
 
         return .{ .components = try clist.toOwnedSlice() };
     }
@@ -477,7 +494,7 @@ pub const Cache = struct {
         errdefer _ = c.map.remove(char);
         if (!gop.found_existing) {
             const g = try ttf.glyphForChar(a, char);
-            const rendered = try g.renderSize(a, ttf, c.size, ttf.head.units_per_em);
+            const rendered = try g.renderSize(a, ttf, .{ .size = c.size, .u_per_em = ttf.head.units_per_em });
             gop.value_ptr.* = rendered;
         }
         return gop.value_ptr;
