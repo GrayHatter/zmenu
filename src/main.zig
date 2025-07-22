@@ -95,9 +95,9 @@ pub fn main() !void {
         if (zm.key_buffer.items.len != draw_count or root.damaged) {
             @branchHint(.unlikely);
             draw_count = zm.key_buffer.items.len;
-            buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .ash_gray);
-            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 512 + 40, 40), 10, .hookers_green);
-            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 510 + 40, 38), 9, .hookers_green);
+            buffer.drawRectangleRoundedFill(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .ash_gray);
+            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(35, 30, 600 - 35 * 2, 40), 10, .hookers_green);
+            buffer.drawRectangleRounded(Buffer.ARGB, .xywh(36, 31, 598 - 35 * 2, 38), 9, .hookers_green);
             if (draw_count > 0) {
                 try drawText(alloc, &glyph_cache, &buffer, zm.key_buffer.items, ttf, .xywh(45, 55, box.w - 80, box.h - 80));
             }
@@ -262,7 +262,7 @@ const UiExecOptions = struct {
     }
 
     fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
-        if (!evt.up) return false;
+        if (evt.up) return false;
         const highlight: *UiExecOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
             .ctrl => |ctrl| switch (ctrl) {
@@ -294,16 +294,16 @@ const UiExecOptions = struct {
                 try drawText(a, gc, buf, bin, ttf, .xywh(box.x, y, box.w, 25));
                 drawn += 1;
                 if (drawn == highlighted) {
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .red);
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .red);
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
+                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
                 }
             }
             if (drawn > 6) break;
         }
         if (highlighted > drawn and drawn > 0) {
             const y = box.y + 20 * (drawn - 1);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .red);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .red);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
+            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
         }
         return drawn;
     }
