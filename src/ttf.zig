@@ -90,11 +90,6 @@ const TableDirectoryEntry = extern struct {
     length: u32,
 };
 
-const Fixed = packed struct(u32) {
-    frac: i16,
-    integer: i16,
-};
-
 pub fn init(font_data: []u8) !Ttf {
     const offset_table = fixEndianness(std.mem.bytesToValue(OffsetTable, font_data[0 .. @bitSizeOf(OffsetTable) / 8]));
     const table_directory_start = @bitSizeOf(OffsetTable) / 8;
