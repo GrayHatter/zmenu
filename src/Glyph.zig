@@ -364,6 +364,12 @@ const RuntimeParser = struct {
 pub const Table = struct {
     data: []const u8,
 
+    pub fn init(bytes: []const u8) Table {
+        return .{
+            .data = bytes,
+        };
+    }
+
     pub fn glyphHeader(self: Table, start: usize) Header {
         const ptr: *align(2) const Header = @alignCast(@ptrCast(self.data[start..][0..@sizeOf(Header)]));
 

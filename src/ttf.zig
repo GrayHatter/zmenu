@@ -54,6 +54,10 @@ pub const HmtxTable = struct {
         left_side_bearing: i16,
     };
 
+    pub fn init(bytes: []const u8) HmtxTable {
+        return .{ .hmtx_bytes = bytes };
+    }
+
     pub fn getMetrics(self: HmtxTable, num_hor_metrics: usize, glyph_index: usize) LongHorMetric {
         if (glyph_index < num_hor_metrics) {
             return self.loadHorMetric(glyph_index);
@@ -120,8 +124,8 @@ pub fn init(font_data: []u8) !Ttf {
             },
             .maxp => maxp = fixEndianness(std.mem.bytesToValue(Maxp.Table, tableFromEntry(font_data, entry))),
             .cmap => cmap = .init(tableFromEntry(font_data, entry)),
-            .glyf => glyf = Glyph.Table{ .data = tableFromEntry(font_data, entry) },
-            .hmtx => hmtx = HmtxTable{ .hmtx_bytes = tableFromEntry(font_data, entry) },
+            .glyf => glyf = .init(tableFromEntry(font_data, entry)),
+            .hmtx => hmtx = .init(tableFromEntry(font_data, entry)),
             // skip
             .post, .prep, .name, .@"OS/2", .gasp => {},
             .BASE, .GDEF, .GSUB, .GPOS, .STAT => {},
