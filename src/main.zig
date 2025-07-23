@@ -403,6 +403,12 @@ const UiHistoryOptions = struct {
             .ctrl => |ctrl| switch (ctrl) {
                 .arrow_up => histopt.cursor_idx -|= 1,
                 .arrow_down => histopt.cursor_idx +|= 1,
+                .tab => {
+                    if (evt.mods.shift)
+                        histopt.cursor_idx -|= 1
+                    else
+                        histopt.cursor_idx +|= 1;
+                },
                 else => {},
             },
             else => {},
@@ -493,6 +499,12 @@ const UiExecOptions = struct {
             .ctrl => |ctrl| switch (ctrl) {
                 .arrow_up => exoptions.cursor_idx -|= 1,
                 .arrow_down => exoptions.cursor_idx +|= 1,
+                .tab => {
+                    if (evt.mods.shift)
+                        exoptions.cursor_idx -|= 1
+                    else
+                        exoptions.cursor_idx +|= 1;
+                },
                 else => {},
             },
             else => {},

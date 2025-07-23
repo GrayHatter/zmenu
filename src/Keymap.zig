@@ -15,6 +15,7 @@ pub const Control = enum(u16) {
     arrow_down = 108,
     arrow_left = 105,
     arrow_right = 106,
+    tab = 15,
 
     ascii_char,
 
@@ -40,14 +41,8 @@ pub fn init() Keymap {
 }
 
 pub fn initFd(fd: anytype, size: u32) !Keymap {
-    const data = std.posix.mmap(
-        null,
-        size,
-        std.posix.PROT.READ | std.posix.PROT.WRITE,
-        .{ .TYPE = .PRIVATE },
-        fd,
-        0,
-    ) catch unreachable;
+    const prot = std.posix.PROT.READ | std.posix.PROT.WRITE;
+    const data = std.posix.mmap(null, size, prot, .{ .TYPE = .PRIVATE }, fd, 0) catch unreachable;
 
     if (false) std.debug.print("{s}\n", .{data});
     _ = try parse(data);
@@ -112,6 +107,7 @@ pub fn ascii(_: Keymap, key: u32, mods: Modifiers) ?u8 {
         10 => .{ '9', '(', '9', '9' },
         11 => .{ '0', ')', '0', '0' },
 
+        15 => .{ null, null, null, null }, // Tab,
         42 => .{ null, null, null, null }, // Left Shift,
         54 => .{ null, null, null, null }, // Right Shift,
         29 => .{ null, null, null, null }, // Left Ctrl,
@@ -154,6 +150,7 @@ pub fn ctrl(_: Keymap, key: u32) Control {
         108 => .arrow_down,
         105 => .arrow_left,
         106 => .arrow_right,
+        15 => .tab,
         else => {
             std.debug.print("Unable to translate  ctrl {}\n", .{key});
             return .UNKNOWN;
