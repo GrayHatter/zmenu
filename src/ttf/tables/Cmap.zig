@@ -19,6 +19,14 @@ pub const SubtableLookup = packed struct {
     platform_specific_id: u16,
     offset: u32,
 
+    pub fn fromBytes(bytes: []align(2) const u8) SubtableLookup {
+        return .{
+            .platform_id = byteSwap(@as(*const u16, @ptrCast(bytes.ptr)).*),
+            .platform_specific_id = byteSwap(@as(*const u16, @ptrCast(bytes[2..].ptr)).*),
+            .offset = byteSwap(@as(*const u32, @alignCast(@ptrCast(bytes[4..].ptr))).*),
+        };
+    }
+
     pub fn isUnicodeBmp(self: SubtableLookup) bool {
         return (self.platform_id == 0 and self.platform_specific_id == 3) or // unicode + bmp
             (self.platform_id == 3 and self.platform_specific_id == 1) // windows + unicode ucs 2
@@ -93,11 +101,7 @@ pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
     const subtable_size = @sizeOf(SubtableLookup);
     const start = @sizeOf(Index) + idx * subtable_size;
 
-    return .{
-        .platform_id = byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[start..].ptr))).*),
-        .platform_specific_id = byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[start + 2 ..].ptr))).*),
-        .offset = byteSwap(@as(*u32, @alignCast(@ptrCast(self.cmap_bytes[start + 4 ..].ptr))).*),
-    };
+    return .fromBytes(@alignCast(@ptrCast(self.cmap_bytes[start..])));
 }
 
 pub fn readSubtableFormat(self: Cmap, offset: usize) u16 {
