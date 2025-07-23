@@ -318,6 +318,7 @@ test "renderSize" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    //const alloc = std.testing.allocator;
 
     var timer: std.time.Timer = try .start();
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
@@ -326,6 +327,7 @@ test "renderSize" {
 
     const g = try ttf.glyphForChar(alloc, 'd');
     const rendered, _ = try g.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+    defer alloc.free(rendered.pixels);
 
     if (false) debugGlyph(rendered);
     const lap = timer.lap();

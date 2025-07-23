@@ -134,7 +134,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
             .hhea => hhea = fixEndianness(std.mem.bytesToValue(HheaTable, tableFromEntry(font_data, entry))),
             .loca => {
                 loca = switch (head.?.index_to_loc_format) {
-                    0 => .{ .u16 = try fixSliceEndianness(u16, alloc, std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },
+                    0 => .{ .u16 = @alignCast(std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },
                     1 => .{ .u32 = try fixSliceEndianness(u32, alloc, std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))) },
                     else => @panic("these are the only two options, I promise!"),
                 };
@@ -156,7 +156,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
     // Magic is easy to check
     std.debug.assert(head_unwrapped.magic_number == 0x5F0F3CF5);
 
-    const subtable = try readSubtable(alloc, cmap orelse return error.NoCMAP);
+    const subtable = try readSubtable(cmap orelse return error.NoCMAP);
 
     return .{
         .maxp = maxp orelse return error.NoMaxp,
@@ -170,7 +170,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
     };
 }
 
-fn tableFromEntry(font_data: []const u8, entry: TableDirectoryEntry) []const u8 {
+fn tableFromEntry(font_data: []u8, entry: TableDirectoryEntry) []u8 {
     return font_data[entry.offset .. entry.offset + entry.length];
 }
 
@@ -190,7 +190,8 @@ pub const RuntimeParser = struct {
         return fixSliceEndianness(T, alloc, std.mem.bytesAsSlice(T, self.data[self.idx .. self.idx + size]));
     }
 };
-fn readSubtable(alloc: Allocator, cmap: CmapTable) !CmapTable.SubtableFormat4 {
+
+fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
     const index = cmap.readIndex();
     const unicode_table_offs = blk: {
         for (0..index.num_subtables) |i| {
@@ -208,12 +209,12 @@ fn readSubtable(alloc: Allocator, cmap: CmapTable) !CmapTable.SubtableFormat4 {
         return error.Unimplemented;
     }
 
-    return try cmap.readSubtableFormat4(alloc, unicode_table_offs);
+    return try cmap.readSubtableFormat4(unicode_table_offs);
 }
 
 pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
     const start, const end = switch (ttf.loca) {
-        .u16 => |s| .{ @as(u32, s[idx]) * 2, @as(u32, s[idx + 1]) * 2 },
+        .u16 => |s| .{ @as(u32, byteSwap(s[idx])) * 2, @as(u32, byteSwap(s[idx + 1])) * 2 },
         .u32 => |l| .{ l[idx], l[idx + 1] },
     };
 
@@ -302,6 +303,13 @@ pub const Scale = struct {
         return @intFromFloat(f * s.scale);
     }
 };
+
+pub inline fn byteSwap(val: anytype) @TypeOf(val) {
+    if (builtin.cpu.arch.endian() == .big) {
+        return val;
+    }
+    return @byteSwap(val);
+}
 
 pub fn fixEndianness(val: anytype) @TypeOf(val) {
     if (builtin.cpu.arch.endian() == .big) {

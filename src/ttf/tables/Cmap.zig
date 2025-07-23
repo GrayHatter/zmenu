@@ -1,4 +1,4 @@
-cmap_bytes: []const u8,
+cmap_bytes: []u8,
 
 const Cmap = @This();
 
@@ -83,18 +83,21 @@ pub fn readIndex(self: Cmap) Index {
 }
 
 pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
-    const subtable_size = @bitSizeOf(SubtableLookup) / 8;
-    const start = @bitSizeOf(Index) / 8 + idx * subtable_size;
-    const end = start + subtable_size;
+    const subtable_size = @sizeOf(SubtableLookup);
+    const start = @sizeOf(Index) + idx * subtable_size;
 
-    return fixEndianness(std.mem.bytesToValue(SubtableLookup, self.cmap_bytes[start..end]));
+    return .{
+        .platform_id = byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[start..].ptr))).*),
+        .platform_specific_id = byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[start + 2 ..].ptr))).*),
+        .offset = byteSwap(@as(*u32, @alignCast(@ptrCast(self.cmap_bytes[start + 4 ..].ptr))).*),
+    };
 }
 
 pub fn readSubtableFormat(self: Cmap, offset: usize) u16 {
     return fixEndianness(std.mem.bytesToValue(u16, self.cmap_bytes[offset .. offset + 2]));
 }
 
-pub fn readSubtableFormat4(self: Cmap, alloc: Allocator, offset: usize) !SubtableFormat4 {
+pub fn readSubtableFormat4(self: Cmap, offset: usize) !SubtableFormat4 {
     var runtime_parser = RuntimeParser{ .data = self.cmap_bytes[offset..] };
     const format = runtime_parser.readVal(u16);
     const length = runtime_parser.readVal(u16);
@@ -104,12 +107,26 @@ pub fn readSubtableFormat4(self: Cmap, alloc: Allocator, offset: usize) !Subtabl
     const entry_selector = runtime_parser.readVal(u16);
     const range_shift = runtime_parser.readVal(u16);
 
-    const end_code: []const u16 = try runtime_parser.readArray(u16, alloc, seg_count_x2 / 2);
-    const reserved_pad = runtime_parser.readVal(u16);
-    const start_code: []const u16 = try runtime_parser.readArray(u16, alloc, seg_count_x2 / 2);
-    const id_delta: []const u16 = try runtime_parser.readArray(u16, alloc, seg_count_x2 / 2);
-    const id_range_offset: []const u16 = try runtime_parser.readArray(u16, alloc, seg_count_x2 / 2);
-    const glyph_indices: []const u16 = try runtime_parser.readArray(u16, alloc, (runtime_parser.data.len - runtime_parser.idx) / 2);
+    var used: usize = offset + 16;
+
+    const end_code: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
+    used += seg_count_x2;
+    const reserved_pad: u16 = @intCast(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[used..].ptr))).*);
+    used += 2;
+    const start_code: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
+    used += seg_count_x2;
+    const id_delta: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
+    used += seg_count_x2;
+    const id_range_offset: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
+    used += seg_count_x2;
+    const glyph_indices: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. (self.cmap_bytes.len - used) / 2];
+    used += seg_count_x2;
+
+    for (end_code) |*each| each.* = byteSwap(each.*);
+    for (start_code) |*each| each.* = byteSwap(each.*);
+    for (id_delta) |*each| each.* = byteSwap(each.*);
+    for (id_range_offset) |*each| each.* = byteSwap(each.*);
+    for (glyph_indices) |*each| each.* = byteSwap(each.*);
 
     return .{
         .format = format,
@@ -146,7 +163,7 @@ pub fn fixEndianness(val: anytype) @TypeOf(val) {
     }
 }
 
-pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]T {
+pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]const T {
     const duped = try alloc.alloc(T, slice.len);
     for (0..slice.len) |i| {
         duped[i] = fixEndianness(slice[i]);
@@ -154,20 +171,30 @@ pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) 
     return duped;
 }
 
+pub inline fn byteSwap(val: anytype) @TypeOf(val) {
+    if (builtin.cpu.arch.endian() == .big) {
+        return val;
+    }
+    return @byteSwap(val);
+}
+
 pub const RuntimeParser = struct {
-    data: []const u8,
+    data: []u8,
     idx: usize = 0,
 
     pub fn readVal(self: *RuntimeParser, comptime T: type) T {
         const size = @bitSizeOf(T) / 8;
         defer self.idx += size;
-        return fixEndianness(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
+        return byteSwap(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
     }
 
-    pub fn readArray(self: *RuntimeParser, comptime T: type, alloc: Allocator, len: usize) ![]T {
-        const size = @bitSizeOf(T) / 8 * len;
-        defer self.idx += size;
-        return fixSliceEndianness(T, alloc, std.mem.bytesAsSlice(T, self.data[self.idx .. self.idx + size]));
+    pub fn readArray(self: *RuntimeParser, comptime T: type, len: usize) ![]T {
+        defer self.idx += @sizeOf(T) * len;
+        const ptr: [*]T = @alignCast(@ptrCast(self.data[self.idx..].ptr));
+        for (ptr[0..len]) |*value| {
+            value.* = byteSwap(value.*);
+        }
+        return ptr[0..len];
     }
 };
 
