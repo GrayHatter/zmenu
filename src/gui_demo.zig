@@ -33,7 +33,7 @@ pub fn main() !void {
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
-    const ttf = try Ttf.init(alloc, font);
+    const ttf = try Ttf.init(font);
     try drawText2(alloc, &buffer, ttf);
     try drawText3(alloc, &buffer, ttf);
 

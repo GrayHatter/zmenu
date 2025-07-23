@@ -95,7 +95,7 @@ const Fixed = packed struct(u32) {
     integer: i16,
 };
 
-pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
+pub fn init(font_data: []u8) !Ttf {
     const offset_table = fixEndianness(std.mem.bytesToValue(OffsetTable, font_data[0 .. @bitSizeOf(OffsetTable) / 8]));
     const table_directory_start = @bitSizeOf(OffsetTable) / 8;
     const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
@@ -119,7 +119,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
             .loca => {
                 loca = switch (head.?.index_to_loc_format) {
                     0 => .{ .u16 = @alignCast(std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },
-                    1 => .{ .u32 = try fixSliceEndianness(u32, alloc, std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))) },
+                    1 => .{ .u32 = @alignCast(std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))) },
                     else => @panic("these are the only two options, I promise!"),
                 };
             },
@@ -199,7 +199,7 @@ fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
 pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
     const start, const end = switch (ttf.loca) {
         .u16 => |s| .{ @as(u32, byteSwap(s[idx])) * 2, @as(u32, byteSwap(s[idx + 1])) * 2 },
-        .u32 => |l| .{ l[idx], l[idx + 1] },
+        .u32 => |l| .{ byteSwap(l[idx]), byteSwap(l[idx + 1]) },
     };
 
     if (start == end) return null;
@@ -332,7 +332,7 @@ test "render all chars" {
     const font: []align(2) u8 = try alloc.alignedAlloc(u8, 2, embed.len);
     @memcpy(font, embed);
     defer alloc.free(font);
-    const ttf = try Ttf.init(alloc, font);
+    const ttf = try Ttf.init(font);
 
     var timer = try std.time.Timer.start();
 

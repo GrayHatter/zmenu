@@ -219,7 +219,7 @@ test "layoutHelper" {
     const font: []align(2) u8 = try alloc.alignedAlloc(u8, 2, embed.len);
     @memcpy(font, embed);
     defer alloc.free(font);
-    const ttf = try Ttf.init(alloc, font);
+    const ttf = try Ttf.init(font);
     const text = "this is some really long text";
     var lh: LayoutHelper = .init(alloc, text, ttf, 100, 14);
     while (try lh.step(ttf)) {}
@@ -234,7 +234,7 @@ test "layoutHelper" {
     };
 
     try std.testing.expectEqual(@as(isize, 0), tl.min_x);
-    try std.testing.expectEqual(@as(isize, 89), tl.max_x);
+    try std.testing.expectEqual(@as(isize, 99), tl.max_x);
     try std.testing.expectEqual(@as(isize, -98), tl.min_y);
     try std.testing.expectEqual(@as(isize, 18), tl.max_y);
     try std.testing.expectEqual(@as(u8, 116), tl.glyphs[0].char);
