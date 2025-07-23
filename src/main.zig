@@ -37,9 +37,26 @@ pub fn main() !void {
 
     try zm.wayland.roundtrip();
 
-    const paths = [_][]const u8{"/usr/bin"};
+    const paths: []const ?[]const u8 = b: {
+        var path_env: ?[]const u8 = null;
+        for (std.os.environ) |envZ| {
+            const env = std.mem.span(envZ);
+            if (std.mem.startsWith(u8, env, "PATH=")) {
+                path_env = env[5..];
+                break;
+            }
+        }
+        const path_count = std.mem.count(u8, path_env orelse "", ":");
+        if (path_env == null or path_count == 0) break :b &[_]?[]const u8{"/usr/bin"};
+        const paths = try alloc.alloc(?[]const u8, path_count);
+        var itr = std.mem.tokenizeScalar(u8, path_env.?, ':');
+        for (paths) |*p| {
+            p.* = itr.next();
+        }
+        break :b paths;
+    };
     sys_exes = try .initCapacity(alloc, 4096);
-    var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, &paths });
+    var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, paths });
     defer thread.join();
 
     const surface = zm.wayland.surface orelse return error.NoSurface;
@@ -177,11 +194,15 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
 }
 
 /// Paths must be absolute
-fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []const []const u8) void {
-    for (paths) |path| {
-        var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| {
-            std.debug.print("Unable to open path '{s}' because {}\n", .{ path, err });
-            continue;
+fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []const ?[]const u8) void {
+    for (paths) |path0| {
+        const path = path0 orelse continue;
+        var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| switch (err) {
+            error.FileNotFound => continue, // It's expected that some dirs will go missing
+            else => {
+                std.debug.print("Unable to open path '{s}' because {}\n", .{ path, err });
+                continue;
+            },
         };
         defer dir.close();
         var ditr = dir.iterate();
