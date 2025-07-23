@@ -67,7 +67,7 @@ pub const ARGB = enum(u32) {
 
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
         const color: u32 = (0xff000000 |
-            @as(u32, r) << SHIFT.A |
+            @as(u32, r) << SHIFT.R |
             @as(u32, g) << SHIFT.G |
             @as(u32, b) << SHIFT.B);
 
