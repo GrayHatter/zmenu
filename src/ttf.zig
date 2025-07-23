@@ -11,9 +11,12 @@ cmap_subtable: Cmap.SubtableFormat4,
 const Ttf = @This();
 
 const Head = @import("ttf/tables/Head.zig");
+const HeadTable = Head;
 const Maxp = @import("ttf/tables/Maxp.zig");
 const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
+const Hhea = @import("ttf/tables/Hhea.zig");
+const HheaTable = Hhea.Table;
 
 pub const LocaSlice = union(enum) {
     u16: []const u16,
@@ -41,25 +44,6 @@ const HeaderTag = enum {
     GPOS,
     GSUB,
     STAT,
-};
-const HheaTable = packed struct {
-    version: Fixed,
-    ascent: i16,
-    descent: i16,
-    line_gap: i16,
-    advance_width_max: u16,
-    min_left_side_bearing: i16,
-    min_right_side_bearing: i16,
-    x_max_extent: i16,
-    caret_slope_rise: i16,
-    caret_slope_run: i16,
-    caret_offset: i16,
-    reserved1: i16,
-    reserved2: i16,
-    reserved3: i16,
-    reserved4: i16,
-    metric_data_format: i16,
-    num_of_long_hor_metrics: u16,
 };
 
 pub const HmtxTable = struct {
@@ -140,7 +124,7 @@ pub fn init(alloc: Allocator, font_data: []u8) !Ttf {
                 };
             },
             .maxp => maxp = fixEndianness(std.mem.bytesToValue(Maxp.Table, tableFromEntry(font_data, entry))),
-            .cmap => cmap = CmapTable{ .cmap_bytes = tableFromEntry(font_data, entry) },
+            .cmap => cmap = .init(tableFromEntry(font_data, entry)),
             .glyf => glyf = Glyph.Table{ .data = tableFromEntry(font_data, entry) },
             .hmtx => hmtx = HmtxTable{ .hmtx_bytes = tableFromEntry(font_data, entry) },
             // skip

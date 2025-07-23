@@ -93,6 +93,12 @@ pub const SubtableFormat4 = struct {
     }
 };
 
+pub fn init(bytes: []u8) Cmap {
+    return .{
+        .cmap_bytes = bytes,
+    };
+}
+
 pub fn index(cmap: Cmap) Index {
     return .fromBytes(cmap.cmap_bytes);
 }
