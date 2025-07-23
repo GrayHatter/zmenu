@@ -58,11 +58,18 @@ pub const ARGB = enum(u32) {
         pub const B = 0x000000ff;
     };
 
+    pub const SHIFT = struct {
+        pub const A = 0x18;
+        pub const R = 0x10;
+        pub const G = 0x08;
+        pub const B = 0x00;
+    };
+
     pub fn rgb(r: u8, g: u8, b: u8) ARGB {
         const color: u32 = (0xff000000 |
-            @as(u32, r) << 16 |
-            @as(u32, g) << 8 |
-            @as(u32, b));
+            @as(u32, r) << SHIFT.A |
+            @as(u32, g) << SHIFT.G |
+            @as(u32, b) << SHIFT.B);
 
         return @enumFromInt(color);
     }
@@ -86,14 +93,14 @@ pub const ARGB = enum(u32) {
     }
 
     pub fn mix(src: ARGB, dest: *u32) void {
-        const alp: u32 = (src.int() & MASK.A) >> 24;
-        const red: u32 = (src.int() & MASK.R) >> 16;
-        const gre: u32 = (src.int() & MASK.G) >> 8;
-        const blu: u32 = (src.int() & MASK.B) >> 0;
+        const alp: u32 = (src.int() & MASK.A) >> SHIFT.A;
+        const red: u32 = (src.int() & MASK.R) >> SHIFT.R;
+        const gre: u32 = (src.int() & MASK.G) >> SHIFT.G;
+        const blu: u32 = (src.int() & MASK.B) >> SHIFT.B;
 
-        const r: u32 = (dest.* & MASK.R) >> 16;
-        const g: u32 = (dest.* & MASK.G) >> 8;
-        const b: u32 = (dest.* & MASK.B) >> 0;
+        const r: u32 = (dest.* & MASK.R) >> SHIFT.R;
+        const g: u32 = (dest.* & MASK.G) >> SHIFT.G;
+        const b: u32 = (dest.* & MASK.B) >> SHIFT.B;
 
         //aOut = aA + (aB * (255 - aA) / 255);
         const color: u32 = 0xff000000 |
