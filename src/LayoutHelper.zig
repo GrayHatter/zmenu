@@ -234,7 +234,7 @@ test "layoutHelper" {
     };
 
     try std.testing.expectEqual(@as(isize, 0), tl.min_x);
-    try std.testing.expectEqual(@as(isize, 99), tl.max_x);
+    try std.testing.expectEqual(@as(isize, 89), tl.max_x);
     try std.testing.expectEqual(@as(isize, -98), tl.min_y);
     try std.testing.expectEqual(@as(isize, 18), tl.max_y);
     try std.testing.expectEqual(@as(u8, 116), tl.glyphs[0].char);

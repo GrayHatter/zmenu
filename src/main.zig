@@ -606,7 +606,7 @@ fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
 
 test {
     _ = &Buffer;
-    //_ = &LayoutHelper;
+    _ = &LayoutHelper;
     _ = &Ttf;
     _ = &ZMenu;
     _ = &Glyph;
