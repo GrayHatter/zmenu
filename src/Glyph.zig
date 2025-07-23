@@ -82,7 +82,6 @@ pub const Simple = struct {
 
         var y = bbox.min_y;
         while (y < bbox.max_y) : (y += 1) {
-            const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
             const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
 
             var winding_count: i64 = 0;
@@ -98,6 +97,7 @@ pub const Simple = struct {
                 }
                 // NOTE: Always see true first due to sorting
                 if (winding_count == 0) {
+                    const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
                     const left = @min(start, point.x_pos) + ext.x_offset;
                     const right = @max(start, point.x_pos) + ext.x_offset;
                     canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
@@ -272,7 +272,7 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !R
         .max_y = glyph.header.y_max,
     };
 
-    var canvas = try Canvas.init(alloc, ((bbox.width() + 7) / 8) * 8, bbox.height());
+    var canvas = try Canvas.init(alloc, bbox.width(), bbox.height());
 
     switch (glyph.glyph) {
         .simple => |s| {
