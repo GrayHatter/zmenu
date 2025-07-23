@@ -37,6 +37,25 @@ pub fn main() !void {
 
     try zm.wayland.roundtrip();
 
+    const home_dir: std.fs.Dir = h: {
+        for (std.os.environ) |envZ| {
+            const env = std.mem.span(envZ);
+            if (std.mem.startsWith(u8, env, "HOME=")) {
+                if (env[5..].len == 0) continue;
+                if (std.fs.openDirAbsolute(env[5..], .{})) |dir| {
+                    break :h dir;
+                } else |err| {
+                    std.debug.print(
+                        "Unable to open home dir specified by $HOME '{s}' error {}\n",
+                        .{ env[5..], err },
+                    );
+                    break :h std.fs.cwd();
+                }
+            }
+        }
+        break :h std.fs.cwd();
+    };
+
     const paths: []const ?[]const u8 = b: {
         var path_env: ?[]const u8 = null;
         for (std.os.environ) |envZ| {
@@ -72,8 +91,7 @@ pub fn main() !void {
     glyph_cache = .init(14);
     defer glyph_cache.raze(alloc);
 
-    const dir = std.fs.cwd();
-    command_history = loadHistory(dir, alloc) catch |err| b: {
+    command_history = loadHistory(home_dir, alloc) catch |err| b: {
         std.debug.print("error loading history {}\n", .{err});
         break :b &.{};
     };
@@ -105,7 +123,7 @@ pub fn main() !void {
     }
 
     if (ui_key_buffer.items.len > 2) {
-        try writeOutHistory(dir, command_history, ui_key_buffer.items);
+        try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
     }
 }
 
