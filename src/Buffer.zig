@@ -389,11 +389,11 @@ pub fn drawCircleCentered(b: Buffer, T: type, box: Box, ecolor: T) void {
 
 pub fn drawFont(b: Buffer, T: type, color: T, box: Box, src: []const u8) void {
     //std.debug.print("{}\n", .{box});
-    for (0..box.h, box.y..) |sy, dy| {
+    for (1..box.h + 1, box.y..) |sy, dy| {
         //std.debug.print("{} - {} {}\n", .{ box.h, dy, sy });
         const row = b.rowSlice(dy - box.h);
         for (box.x..box.x + box.w, 0..) |dx, sx| {
-            const p: u8 = src[(box.h - 1 - sy) * box.w + sx];
+            const p: u8 = src[(box.h - sy) * box.w + sx];
             if (p == 0) continue;
             const color2 = color.alpha(p);
             color2.mix(&row[dx]);

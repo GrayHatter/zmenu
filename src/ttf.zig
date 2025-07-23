@@ -329,7 +329,7 @@ pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) 
     return duped;
 }
 
-test {
+test "render all chars" {
     const debug_print_timing = false;
 
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
@@ -366,11 +366,11 @@ test {
 
     for ("abcdefghijklmnopqrstuvwxyz") |char| {
         const glyph = try ttf.glyphForChar(alloc, char);
-        _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+        _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
     }
     for ("ABCDEFGHIJKLMNOPQRSTUVWXYZ") |char| {
         const glyph = try ttf.glyphForChar(alloc, char);
-        _ = try glyph.renderSize(alloc, ttf, 14, ttf.head.units_per_em);
+        _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
     }
     if (debug_print_timing) std.debug.print("after render size {d: >8}\n", .{timer.lap()});
 }

@@ -109,7 +109,7 @@ pub const Simple = struct {
 
 pub const RenderExtra = struct {
     size: f32 = 1.0,
-    u_per_em: usize = 1,
+    u_per_em: f32 = 1.0,
     /// TODO verify this is safe to be a i32 instead of i16 see also
     /// `Compound.Component`
     x_offset: i32 = 0,
@@ -263,37 +263,74 @@ pub const BBox = struct {
 };
 
 pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !RenderedGlyph {
-
-    //const s = fontScale(size, @floatFromInt(u_per_em));
     var bbox = BBox{
         .min_x = glyph.header.x_min,
         .max_x = glyph.header.x_max,
         .min_y = glyph.header.y_min,
         .max_y = glyph.header.y_max,
     };
+    const dpi = 96; // Default DPI is 96
+    const base_dpi = 72; // from ttf spec
 
-    var canvas = try Canvas.init(alloc, bbox.width(), bbox.height());
+    var canvas: Canvas = try .initScale(
+        alloc,
+        bbox.width(),
+        bbox.height(),
+        ext.size * dpi / (base_dpi * ext.u_per_em),
+    );
 
     switch (glyph.glyph) {
-        .simple => |s| {
-            try s.renderSize(bbox, &canvas, ext);
-        },
-        .compound => |c| {
-            for (c.components) |com| {
-                const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
-                const next = try ttf.glyf.glyph(alloc, start, end);
-                if (next.glyph != .simple) @panic("something's fucky");
-                try next.glyph.simple.renderSize(bbox, &canvas, .{
-                    .x_offset = com.arg0,
-                    .y_offset = com.arg1,
-                    .size = ext.size,
-                    .u_per_em = ext.u_per_em,
-                });
-            }
+        .simple => |s| try s.renderSize(bbox, &canvas, ext),
+        .compound => |c| for (c.components) |com| {
+            const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
+            const next = try ttf.glyf.glyph(alloc, start, end);
+            if (next.glyph != .simple) @panic("something's fucky");
+            try next.glyph.simple.renderSize(bbox, &canvas, .{
+                .x_offset = com.arg0,
+                .y_offset = com.arg1,
+                .size = ext.size,
+                .u_per_em = ext.u_per_em,
+            });
         },
     }
 
     return .{ canvas, bbox };
+}
+
+pub fn debugGlyph(rendered: Canvas) void {
+    std.debug.print("               |", .{});
+    for (0..rendered.width) |i| std.debug.print("{d:4}", .{i});
+    std.debug.print("\n", .{});
+    std.debug.print("               |____________________________________\n", .{});
+    for (1..rendered.height + 1) |h| {
+        std.debug.print("sy {d:3}  dy {d:3} | ", .{ h, rendered.height - h });
+        for (rendered.getRow(@intCast(rendered.height - h)) orelse {
+            std.debug.print("\n", .{});
+            continue;
+        }) |x| {
+            std.debug.print("{d:3} ", .{x});
+        }
+        std.debug.print("\n", .{});
+    }
+}
+
+test "renderSize" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var timer: std.time.Timer = try .start();
+    const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
+    defer alloc.free(font);
+    const ttf = try Ttf.init(alloc, font);
+
+    const g = try ttf.glyphForChar(alloc, 'd');
+    const rendered, _ = try g.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+
+    if (false) debugGlyph(rendered);
+    const lap = timer.lap();
+    //std.debug.print("glyph {}\n", .{rendered});
+    if (false) std.debug.print("lap {}\n", .{lap});
 }
 
 pub const RenderedGlyph = struct {
@@ -302,7 +339,7 @@ pub const RenderedGlyph = struct {
 };
 
 pub fn render(glyph: Glyph, alloc: Allocator, ttf: Ttf) !RenderedGlyph {
-    return try glyph.renderSize(alloc, ttf, 1.0, 1.0);
+    return try glyph.renderSize(alloc, ttf, .{ .size = 1.0, .u_per_em = 1.0 });
 }
 
 const RuntimeParser = struct {
@@ -491,7 +528,7 @@ pub const Cache = struct {
         errdefer _ = c.map.remove(char);
         if (!gop.found_existing) {
             const g = try ttf.glyphForChar(a, char);
-            const rendered = try g.renderSize(a, ttf, .{ .size = c.size, .u_per_em = ttf.head.units_per_em });
+            const rendered = try g.renderSize(a, ttf, .{ .size = c.size, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
             gop.value_ptr.* = rendered;
         }
         return gop.value_ptr;
@@ -512,7 +549,7 @@ pub const Cache = struct {
 //    return @intFromFloat(@round(scale * size_f));
 //}
 
-test {
+test "glyph main" {
     _ = std.testing.refAllDecls(@This());
     _ = &Canvas;
     _ = &Segment;

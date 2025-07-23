@@ -210,7 +210,7 @@ fn rollback(lh: *LayoutHelper) void {
     lh.x_cursor = lh.rollback_data.start_x;
 }
 
-test {
+test "layoutHelper" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
