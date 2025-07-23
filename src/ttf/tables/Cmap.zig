@@ -2,9 +2,16 @@ cmap_bytes: []u8,
 
 const Cmap = @This();
 
-const Index = packed struct {
+pub const Index = packed struct {
     version: u16,
     num_subtables: u16,
+
+    pub fn fromBytes(bytes: []const u8) Index {
+        return .{
+            .version = byteSwap(@as(*const u16, @alignCast(@ptrCast(bytes.ptr))).*),
+            .num_subtables = byteSwap(@as(*const u16, @alignCast(@ptrCast(bytes[2..].ptr))).*),
+        };
+    }
 };
 
 pub const SubtableLookup = packed struct {
@@ -44,7 +51,7 @@ pub const SubtableFormat4 = struct {
         // This won't make sense if you don't read the spec...
         var i: usize = 0;
         while (i < self.end_code.len) {
-            if (self.end_code[i] >= c and self.start_code[i] <= c) {
+            if (byteSwap(self.end_code[i]) >= c and byteSwap(self.start_code[i]) <= c) {
                 break;
             }
             i += 1;
@@ -52,9 +59,9 @@ pub const SubtableFormat4 = struct {
 
         if (i >= self.end_code.len) return 0;
 
-        const byte_offset_from_id_offset = self.id_range_offset[i];
+        const byte_offset_from_id_offset = byteSwap(self.id_range_offset[i]);
         if (byte_offset_from_id_offset == 0) {
-            return self.id_delta[i] +% c;
+            return byteSwap(self.id_delta[i]) +% c;
         } else {
             // We apply the pointer offset a little different than the spec
             // suggests. We made individual allocations when copying/byte
@@ -70,16 +77,16 @@ pub const SubtableFormat4 = struct {
             //
             // To find the index into glyph indices, we just subtract i from
             // id_range.len, and subtract that from the offset
-            const offs_from_loc = byte_offset_from_id_offset / 2 + (c - self.start_code[i]);
+            const offs_from_loc = byte_offset_from_id_offset / 2 + (c - byteSwap(self.start_code[i]));
             const dist_to_end = self.id_range_offset.len - i;
             const glyph_index_index = offs_from_loc - dist_to_end;
-            return self.glyph_indices[glyph_index_index] +% self.id_delta[i];
+            return byteSwap(self.glyph_indices[glyph_index_index]) +% byteSwap(self.id_delta[i]);
         }
     }
 };
 
-pub fn readIndex(self: Cmap) Index {
-    return fixEndianness(std.mem.bytesToValue(Index, self.cmap_bytes[0 .. @bitSizeOf(Index) / 8]));
+pub fn index(cmap: Cmap) Index {
+    return .fromBytes(cmap.cmap_bytes);
 }
 
 pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
@@ -94,39 +101,32 @@ pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
 }
 
 pub fn readSubtableFormat(self: Cmap, offset: usize) u16 {
-    return fixEndianness(std.mem.bytesToValue(u16, self.cmap_bytes[offset .. offset + 2]));
+    return byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[offset..].ptr))).*);
 }
 
 pub fn readSubtableFormat4(self: Cmap, offset: usize) !SubtableFormat4 {
-    var runtime_parser = RuntimeParser{ .data = self.cmap_bytes[offset..] };
-    const format = runtime_parser.readVal(u16);
-    const length = runtime_parser.readVal(u16);
-    const language = runtime_parser.readVal(u16);
-    const seg_count_x2 = runtime_parser.readVal(u16);
-    const search_range = runtime_parser.readVal(u16);
-    const entry_selector = runtime_parser.readVal(u16);
-    const range_shift = runtime_parser.readVal(u16);
+    const words: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[offset..].ptr)))[0 .. (self.cmap_bytes.len - offset) / 2];
+    const format = byteSwap(words[0]);
+    const length = byteSwap(words[1]);
+    const language = byteSwap(words[2]);
+    const seg_count_x2 = byteSwap(words[3]);
+    const search_range = byteSwap(words[4]);
+    const entry_selector = byteSwap(words[5]);
+    const range_shift = byteSwap(words[6]);
+    const count = seg_count_x2 / 2;
+    var used: usize = 7;
 
-    var used: usize = offset + 16;
-
-    const end_code: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
-    used += seg_count_x2;
-    const reserved_pad: u16 = @intCast(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[used..].ptr))).*);
-    used += 2;
-    const start_code: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
-    used += seg_count_x2;
-    const id_delta: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
-    used += seg_count_x2;
-    const id_range_offset: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. seg_count_x2 / 2];
-    used += seg_count_x2;
-    const glyph_indices: []u16 = @as([*]u16, @alignCast(@ptrCast(self.cmap_bytes[used..])))[0 .. (self.cmap_bytes.len - used) / 2];
-    used += seg_count_x2;
-
-    for (end_code) |*each| each.* = byteSwap(each.*);
-    for (start_code) |*each| each.* = byteSwap(each.*);
-    for (id_delta) |*each| each.* = byteSwap(each.*);
-    for (id_range_offset) |*each| each.* = byteSwap(each.*);
-    for (glyph_indices) |*each| each.* = byteSwap(each.*);
+    const end_code: []u16 = words[used..][0..count];
+    used += count;
+    const reserved_pad: u16 = words[used];
+    used += 1;
+    const start_code: []u16 = words[used..][0..count];
+    used += count;
+    const id_delta: []u16 = words[used..][0..count];
+    used += count;
+    const id_range_offset: []u16 = words[used..][0..count];
+    used += count;
+    const glyph_indices: []u16 = words[used..];
 
     return .{
         .format = format,
@@ -145,58 +145,12 @@ pub fn readSubtableFormat4(self: Cmap, offset: usize) !SubtableFormat4 {
     };
 }
 
-pub fn fixEndianness(val: anytype) @TypeOf(val) {
-    if (builtin.cpu.arch.endian() == .big) {
-        return val;
-    }
-
-    switch (@typeInfo(@TypeOf(val))) {
-        .@"struct" => {
-            var ret = val;
-            std.mem.byteSwapAllFields(@TypeOf(val), &ret);
-            return ret;
-        },
-        .int => {
-            return std.mem.bigToNative(@TypeOf(val), val);
-        },
-        inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
-    }
-}
-
-pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]const T {
-    const duped = try alloc.alloc(T, slice.len);
-    for (0..slice.len) |i| {
-        duped[i] = fixEndianness(slice[i]);
-    }
-    return duped;
-}
-
 pub inline fn byteSwap(val: anytype) @TypeOf(val) {
     if (builtin.cpu.arch.endian() == .big) {
         return val;
     }
     return @byteSwap(val);
 }
-
-pub const RuntimeParser = struct {
-    data: []u8,
-    idx: usize = 0,
-
-    pub fn readVal(self: *RuntimeParser, comptime T: type) T {
-        const size = @bitSizeOf(T) / 8;
-        defer self.idx += size;
-        return byteSwap(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
-    }
-
-    pub fn readArray(self: *RuntimeParser, comptime T: type, len: usize) ![]T {
-        defer self.idx += @sizeOf(T) * len;
-        const ptr: [*]T = @alignCast(@ptrCast(self.data[self.idx..].ptr));
-        for (ptr[0..len]) |*value| {
-            value.* = byteSwap(value.*);
-        }
-        return ptr[0..len];
-    }
-};
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

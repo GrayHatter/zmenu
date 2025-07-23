@@ -192,7 +192,7 @@ pub const RuntimeParser = struct {
 };
 
 fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
-    const index = cmap.readIndex();
+    const index = cmap.index();
     const unicode_table_offs = blk: {
         for (0..index.num_subtables) |i| {
             const subtable = cmap.readSubtableLookup(i);
