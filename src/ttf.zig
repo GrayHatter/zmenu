@@ -158,23 +158,6 @@ fn tableFromEntry(font_data: []u8, entry: TableDirectoryEntry) []u8 {
     return font_data[entry.offset .. entry.offset + entry.length];
 }
 
-pub const RuntimeParser = struct {
-    data: []const u8,
-    idx: usize = 0,
-
-    pub fn readVal(self: *RuntimeParser, comptime T: type) T {
-        const size = @bitSizeOf(T) / 8;
-        defer self.idx += size;
-        return fixEndianness(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
-    }
-
-    pub fn readArray(self: *RuntimeParser, comptime T: type, alloc: Allocator, len: usize) ![]T {
-        const size = @bitSizeOf(T) / 8 * len;
-        defer self.idx += size;
-        return fixSliceEndianness(T, alloc, std.mem.bytesAsSlice(T, self.data[self.idx .. self.idx + size]));
-    }
-};
-
 fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
     const index = cmap.index();
     const unicode_table_offs = blk: {
@@ -311,14 +294,6 @@ pub fn fixEndianness(val: anytype) @TypeOf(val) {
         },
         inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
     }
-}
-
-pub fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]T {
-    const duped = try alloc.alloc(T, slice.len);
-    for (0..slice.len) |i| {
-        duped[i] = fixEndianness(slice[i]);
-    }
-    return duped;
 }
 
 test "render all chars" {
