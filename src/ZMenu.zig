@@ -2,7 +2,7 @@ wayland: Wayland,
 keymap: Keymap = .{},
 running: bool = true,
 
-ui_root: *ui.Component = undefined,
+ui_root: ?*ui.Component = null,
 
 const ZMenu = @This();
 
@@ -96,6 +96,13 @@ pub fn raze(zm: *ZMenu) void {
     zm.keymap.raze();
 }
 
+pub fn iterate(zm: *ZMenu) !void {
+    try zm.wayland.iterate();
+    if (zm.ui_root) |uiroot| {
+        uiroot.tick();
+    }
+}
+
 pub fn initDmabuf(zm: *ZMenu) !void {
     const dmabuf = zm.wayland.dmabuf orelse return error.NoDMABUF;
     if (zm.wayland.surface) |surface| {
@@ -117,15 +124,6 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
     switch (event) {
         .key => |k| switch (k) {
             .key => |key| {
-                const mods: Keymap.Modifiers = .init(zm.wayland.hid.mods);
-                _ = zm.ui_root.keyPress(.{
-                    .up = key.state == .released,
-                    .key = if (zm.keymap.ascii(key.key, mods)) |asc|
-                        .{ .char = asc }
-                    else
-                        .{ .ctrl = zm.keymap.ctrl(key.key) },
-                    .mods = mods,
-                });
                 switch (key.state) {
                     .pressed => {},
                     .released => {},
@@ -133,6 +131,16 @@ pub fn wlEvent(zm: *ZMenu, event: Event) void {
                         if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
                     },
                 }
+                const uiroot = zm.ui_root orelse return;
+                const mods: Keymap.Modifiers = .init(zm.wayland.hid.mods);
+                _ = uiroot.keyPress(.{
+                    .up = key.state == .released,
+                    .key = if (zm.keymap.ascii(key.key, mods)) |asc|
+                        .{ .char = asc }
+                    else
+                        .{ .ctrl = zm.keymap.ctrl(key.key) },
+                    .mods = mods,
+                });
             },
             .modifiers => {
                 zm.wayland.hid.mods = k.modifiers.mods_depressed;
