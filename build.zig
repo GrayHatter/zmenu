@@ -9,10 +9,7 @@ pub fn build(b: *Build) !void {
 
     const no_bin = b.option(bool, "no-bin", "do not emit binary") orelse false;
 
-    const charcoal = b.dependency("charcoal", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    const charcoal = b.dependency("charcoal", .{ .target = target, .optimize = optimize });
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -46,18 +43,14 @@ pub fn build(b: *Build) !void {
     test_step.dependOn(&run_tests.step);
 
     {
-        // test font
-        const text_mod = b.createModule(.{
+        const demo = b.createModule(.{
             .root_source_file = b.path("src/gui_demo.zig"),
             .target = target,
             .optimize = optimize,
         });
+        demo.addImport("charcoal", charcoal.module("charcoal"));
 
-        const test_text = b.addExecutable(.{ .name = "text_test", .root_module = text_mod });
-
-        //test_text.root_module.addImport("wayland", wayland);
-        test_text.linkLibC();
-        test_text.linkSystemLibrary("wayland-client");
+        const test_text = b.addExecutable(.{ .name = "text_test", .root_module = demo });
 
         const text_run_cmd = b.addRunArtifact(test_text);
         const text_run_step = b.step("demo", "Run gui demo test thing");

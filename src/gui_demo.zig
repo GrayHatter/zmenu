@@ -1,4 +1,6 @@
-const charcoal = @import("charcoal.zig");
+const charcoal = @import("charcoal");
+const Buffer = charcoal.Buffer;
+const ui = charcoal.ui;
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -185,10 +187,8 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
     };
 }
 
-const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
-const ui = @import("ui.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
