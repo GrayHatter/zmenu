@@ -4,9 +4,8 @@
     .fingerprint = 0x2901eafcbbe049d8,
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
-        .wayland = .{
-            .url = "git+https://github.com/ifreund/zig-wayland.git#v0.3.0",
-            .hash = "wayland-0.3.0-lQa1kjPIAQDmhGYpY-zxiRzQJFHQ2VqhJkQLbKKdt5wl",
+        .charcoal = .{
+            .path = "charcoal/",
         },
     },
     .paths = .{

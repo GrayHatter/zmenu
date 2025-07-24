@@ -3,9 +3,6 @@ running: bool = true,
 
 const ZMenu = @This();
 
-const charcoal_ = @import("charcoal.zig");
-const Charcoal = charcoal_.Charcoal;
-
 pub fn init() !ZMenu {
     return .{
         .charcoal = try .init(),
@@ -39,6 +36,11 @@ test "root" {
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Buffer = @import("Buffer.zig");
-const Keymap = @import("Keymap.zig");
-const ui = @import("ui.zig");
+//const Buffer = @import("Buffer.zig");
+//const Keymap = @import("Keymap.zig");
+//const ui = @import("ui.zig");
+const charcoal_ = @import("charcoal");
+const Charcoal = charcoal_.Charcoal;
+const Buffer = charcoal_.Buffer;
+const Keymap = charcoal_.Keymap;
+const ui = charcoal_.ui;

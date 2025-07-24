@@ -26,6 +26,9 @@ pub const Charcoal = struct {
     }
 };
 
+pub const Buffer = @import("Buffer.zig");
+pub const ui = @import("ui.zig");
+
 pub const Ui = struct {
     root: ?*UI.Component = null,
     keymap: Keymap = .{},
@@ -41,19 +44,19 @@ pub const Ui = struct {
         pointer: Wayland.Pointer.Event,
     };
 
-    pub fn init(ui: *UI.Component) Ui {
+    pub fn init(u: *UI.Component) Ui {
         return .{
-            .root = ui,
+            .root = u,
         };
     }
 
     pub fn raze(_: Ui) void {}
 
-    pub fn tick(ui: Ui) void {
-        if (ui.root) |root| root.tick(null);
+    pub fn tick(u: Ui) void {
+        if (u.root) |root| root.tick(null);
     }
 
-    pub fn event(ui: *Ui, evt: Event) void {
+    pub fn event(u: *Ui, evt: Event) void {
         const debug_events = false;
         switch (evt) {
             .key => |k| switch (k) {
@@ -65,26 +68,26 @@ pub const Ui = struct {
                             if (debug_events) std.debug.print("unexpected keyboard key state {} \n", .{unk});
                         },
                     }
-                    const uiroot = ui.root orelse return;
-                    const mods: Keymap.Modifiers = .init(ui.hid.mods);
+                    const uiroot = u.root orelse return;
+                    const mods: Keymap.Modifiers = .init(u.hid.mods);
                     _ = uiroot.keyPress(.{
                         .up = key.state == .released,
-                        .key = if (ui.keymap.ascii(key.key, mods)) |asc|
+                        .key = if (u.keymap.ascii(key.key, mods)) |asc|
                             .{ .char = asc }
                         else
-                            .{ .ctrl = ui.keymap.ctrl(key.key) },
+                            .{ .ctrl = u.keymap.ctrl(key.key) },
                         .mods = mods,
                     });
                 },
                 .modifiers => {
-                    ui.hid.mods = k.modifiers.mods_depressed;
+                    u.hid.mods = k.modifiers.mods_depressed;
                     if (debug_events) std.debug.print("mods {}\n", .{k.modifiers});
                 },
                 else => {},
             },
             .pointer => |point| switch (point) {
                 .button => |btn| {
-                    const chr: *Charcoal = @fieldParentPtr("ui", ui);
+                    const chr: *Charcoal = @fieldParentPtr("ui", u);
                     chr.wayland.toplevel.?.move(chr.wayland.seat.?, btn.serial);
                 },
                 else => {},
@@ -92,10 +95,10 @@ pub const Ui = struct {
         }
     }
 
-    pub fn newKeymap(ui: *Ui, evt: Wayland.Keyboard.Event) void {
+    pub fn newKeymap(u: *Ui, evt: Wayland.Keyboard.Event) void {
         if (false) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
         if (Keymap.initFd(evt.keymap.fd, evt.keymap.size)) |km| {
-            ui.keymap = km;
+            u.keymap = km;
         } else |_| {
             // TODO don't ignore error
         }
@@ -233,5 +236,4 @@ test {
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Buffer = @import("Buffer.zig");
 const listeners = @import("listeners.zig").Listeners;

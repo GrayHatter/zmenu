@@ -24,6 +24,10 @@ pub fn main() !void {
     defer root.raze(alloc);
 
     root.background(&buffer, box);
+    const surface = zm.charcoal.wayland.surface orelse return error.NoSurface;
+    surface.attach(buffer.buffer, 0, 0);
+    surface.commit();
+    try zm.charcoal.wayland.roundtrip();
 
     try zm.charcoal.wayland.roundtrip();
 
@@ -68,11 +72,6 @@ pub fn main() !void {
     var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, paths });
     defer thread.join();
 
-    const surface = zm.charcoal.wayland.surface orelse return error.NoSurface;
-    surface.attach(buffer.buffer, 0, 0);
-    surface.commit();
-    try zm.charcoal.wayland.roundtrip();
-
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
     const ttf = try Ttf.init(font);
@@ -87,7 +86,6 @@ pub fn main() !void {
     };
 
     _ = root.draw(&buffer, box);
-
     surface.attach(buffer.buffer, 0, 0);
     surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
     surface.commit();
@@ -663,16 +661,13 @@ test {
     _ = &Glyph;
 }
 
-const Buffer = @import("Buffer.zig");
+const charcoal = @import("charcoal");
+const Buffer = charcoal.Buffer;
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
 const ZMenu = @import("ZMenu.zig");
-const ui = @import("ui.zig");
+const ui = charcoal.ui;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const wayland = @import("wayland");
-const wl = wayland.client.wl;
-const Xdg = wayland.client.xdg;
-const Zwp = wayland.client.zwp;

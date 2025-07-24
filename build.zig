@@ -9,27 +9,10 @@ pub fn build(b: *Build) !void {
 
     const no_bin = b.option(bool, "no-bin", "do not emit binary") orelse false;
 
-    const scanner = Scanner.create(b, .{});
-    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
-    scanner.addSystemProtocol("stable/linux-dmabuf/linux-dmabuf-v1.xml");
-
-    // Pass the maximum version implemented by your wayland server or client.
-    // Requests, events, enums, etc. from newer versions will not be generated,
-    // ensuring forwards compatibility with newer protocol xml.
-    // This will also generate code for interfaces created using the provided
-    // global interface, in this example wl_keyboard, wl_pointer, xdg_surface,
-    // xdg_toplevel, etc. would be generated as well.
-    scanner.generate("wl_compositor", 4);
-    scanner.generate("wl_output", 4);
-    scanner.generate("wl_seat", 4);
-    scanner.generate("wl_shm", 1);
-    scanner.generate("xdg_wm_base", 7);
-    scanner.generate("zwp_linux_dmabuf_v1", 5);
-    //scanner.generate("zwp_linux_buffer_params_v1", 5);
-    //scanner.generate("zwp_linux_dmabuf_feedback_v1", 5);
-    //scanner.generate("ext_session_lock_manager_v1", 1);
-
-    const wayland = b.createModule(.{ .root_source_file = scanner.result });
+    const charcoal = b.dependency("charcoal", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -38,10 +21,7 @@ pub fn build(b: *Build) !void {
     });
 
     const exe = b.addExecutable(.{ .name = "zmenu", .root_module = exe_mod });
-
-    exe.root_module.addImport("wayland", wayland);
-    exe.linkLibC();
-    exe.linkSystemLibrary("wayland-client");
+    exe.root_module.addImport("charcoal", charcoal.module("charcoal"));
 
     if (no_bin) {
         b.getInstallStep().dependOn(&exe.step);
@@ -75,7 +55,7 @@ pub fn build(b: *Build) !void {
 
         const test_text = b.addExecutable(.{ .name = "text_test", .root_module = text_mod });
 
-        test_text.root_module.addImport("wayland", wayland);
+        //test_text.root_module.addImport("wayland", wayland);
         test_text.linkLibC();
         test_text.linkSystemLibrary("wayland-client");
 

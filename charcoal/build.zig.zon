@@ -1,0 +1,17 @@
+.{
+    .name = .charcoal,
+    .version = "0.0.0",
+    .fingerprint = 0x915fb6869098f221,
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .wayland = .{
+            .url = "git+https://github.com/ifreund/zig-wayland.git#v0.3.0",
+            .hash = "wayland-0.3.0-lQa1kjPIAQDmhGYpY-zxiRzQJFHQ2VqhJkQLbKKdt5wl",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
