@@ -50,7 +50,7 @@ pub const Ui = struct {
     pub fn raze(_: Ui) void {}
 
     pub fn tick(ui: Ui) void {
-        if (ui.root) |root| root.tick();
+        if (ui.root) |root| root.tick(null);
     }
 
     pub fn event(ui: *Ui, evt: Event) void {
@@ -92,7 +92,7 @@ pub const Ui = struct {
         }
     }
 
-    pub fn newKeymap(ui: *Ui, evt: wayland_.client.wl.Keyboard.Event) void {
+    pub fn newKeymap(ui: *Ui, evt: Wayland.Keyboard.Event) void {
         if (false) std.debug.print("newKeymap {} {}\n", .{ evt.keymap.fd, evt.keymap.size });
         if (Keymap.initFd(evt.keymap.fd, evt.keymap.size)) |km| {
             ui.keymap = km;
@@ -124,6 +124,7 @@ pub const Wayland = struct {
 
     dmabuf: ?*LinuxDmabufV1 = null,
 
+    const wayland_ = @import("wayland");
     pub const client = wayland_.client;
     pub const Compositor = client.wl.Compositor;
     pub const Shm = client.wl.Shm;
@@ -225,15 +226,12 @@ pub const Wayland = struct {
     }
 };
 
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-
-const Buffer = @import("Buffer.zig");
-
 test {
     _ = &listeners;
 }
 
-const listeners = @import("listeners.zig").Listeners;
+const std = @import("std");
+const Allocator = std.mem.Allocator;
 
-const wayland_ = @import("wayland");
+const Buffer = @import("Buffer.zig");
+const listeners = @import("listeners.zig").Listeners;

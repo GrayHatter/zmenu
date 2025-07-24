@@ -17,7 +17,7 @@ pub const Component = struct {
         } else for (comp.children) |*child| child.raze(a);
     }
 
-    pub fn tick(comp: *Component, ptr: *anyopaque) void {
+    pub fn tick(comp: *Component, ptr: ?*anyopaque) void {
         if (comp.vtable.tick) |tick_| {
             tick_(comp, ptr);
         } else for (comp.children) |*child| child.tick(ptr);
@@ -94,7 +94,7 @@ pub const VTable = struct {
 
 pub const Init = *const fn (*Component, Allocator, Buffer.Box) InitError!void;
 pub const Raze = *const fn (*Component, Allocator) void;
-pub const Tick = *const fn (*Component, *anyopaque) void;
+pub const Tick = *const fn (*Component, ?*anyopaque) void;
 pub const Background = *const fn (*Component, *const Buffer, Buffer.Box) void;
 pub const Draw = *const fn (*Component, *const Buffer, Buffer.Box) bool;
 pub const KeyPress = *const fn (*Component, KeyEvent) bool;

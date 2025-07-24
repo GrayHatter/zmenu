@@ -30,6 +30,12 @@ pub fn end(zm: *ZMenu) void {
     zm.running = false;
 }
 
+test "root" {
+    _ = &std.testing.refAllDecls(@This());
+    _ = &ui;
+    _ = &charcoal_;
+}
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
