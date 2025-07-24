@@ -4,14 +4,14 @@ pub fn main() !void {
 
     var zm: ZMenu = try .init();
 
-    const box: Buffer.Box = .wh(600, 480);
+    const box: Buffer.Box = .wh(600, 300);
     try zm.connect();
     try zm.charcoal.wayland.resize(box);
     defer zm.raze();
     root_zmenu = &zm;
 
     const shm = zm.charcoal.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
+    var buffer: Buffer = try .initCapacity(shm, .wh(600, 800), .wh(600, 2000), "zmenu-buffer1");
     defer buffer.raze();
 
     var root: ui.Component = .{
@@ -29,6 +29,7 @@ pub fn main() !void {
     surface.commit();
     try zm.charcoal.wayland.roundtrip();
 
+    try buffer.resize(.wh(600, 300));
     try zm.charcoal.wayland.roundtrip();
 
     const home_dir: std.fs.Dir = h: {
