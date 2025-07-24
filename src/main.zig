@@ -5,27 +5,27 @@ pub fn main() !void {
     var zm: ZMenu = try .init();
 
     const box: Buffer.Box = .wh(600, 480);
-    try zm.wayland.init(box);
+    try zm.connect();
+    try zm.charcoal.wayland.resize(box);
     defer zm.raze();
     root_zmenu = &zm;
 
-    const shm = zm.wayland.shm orelse return error.NoWlShm;
+    const shm = zm.charcoal.wayland.shm orelse return error.NoWlShm;
     const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
     defer buffer.raze();
 
-    var root = ui.Component{
+    var root: ui.Component = .{
         .vtable = .auto(UiRoot),
         .box = box,
         .children = &UiRoot.ui_children,
     };
-    zm.ui_root = &root;
-
+    zm.charcoal.ui.root = &root;
     try root.init(alloc, box);
     defer root.raze(alloc);
 
     root.background(&buffer, box);
 
-    try zm.wayland.roundtrip();
+    try zm.charcoal.wayland.roundtrip();
 
     const home_dir: std.fs.Dir = h: {
         for (std.os.environ) |envZ| {
@@ -68,10 +68,10 @@ pub fn main() !void {
     var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, paths });
     defer thread.join();
 
-    const surface = zm.wayland.surface orelse return error.NoSurface;
+    const surface = zm.charcoal.wayland.surface orelse return error.NoSurface;
     surface.attach(buffer.buffer, 0, 0);
     surface.commit();
-    try zm.wayland.roundtrip();
+    try zm.charcoal.wayland.roundtrip();
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
@@ -95,7 +95,7 @@ pub fn main() !void {
     var i: usize = 0;
     var draw_count: usize = 0;
     while (zm.running) : (i +%= 1) {
-        try zm.wayland.iterate();
+        try zm.charcoal.wayland.iterate();
         if (i % 1000 == 0) {
             surface.attach(buffer.buffer, 0, 0);
             surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
