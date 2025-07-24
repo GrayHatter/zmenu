@@ -327,7 +327,7 @@ const UiCommandBox = struct {
         a.destroy(textbox);
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, root: Buffer.Box) bool {
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, root: Buffer.Box) void {
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
@@ -350,7 +350,6 @@ const UiCommandBox = struct {
                 .xywh(45, 55, root.w - 80, root.h - 80),
             ) catch @panic("draw the textbox failed :<");
         }
-        return true;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
@@ -370,12 +369,12 @@ const UiCommandBox = struct {
 };
 
 const UiOptions = struct {
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
         buffer.drawRectangleFill(Buffer.ARGB, history_box, .alpha(.ash_gray, 0x7c));
 
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
-        const ret = comp.children[0].draw(buffer, history_box);
+        comp.children[0].draw(buffer, history_box);
 
         var path_box = history_box;
         path_box.y += 20 * hist.drawn;
@@ -386,7 +385,7 @@ const UiOptions = struct {
         const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
         hist.cursor_idx = cursor;
         path.cursor_idx = cursor;
-        return comp.children[1].draw(buffer, path_box) or ret;
+        comp.children[1].draw(buffer, path_box);
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
@@ -418,7 +417,7 @@ const UiHistoryOptions = struct {
         a.destroy(@as(*UiHistoryOptions, @alignCast(@ptrCast(comp.state))));
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
 
         const drawn = drawHistory(
@@ -430,7 +429,6 @@ const UiHistoryOptions = struct {
             box,
         ) catch @panic("drawing failed");
         hist.drawn = drawn;
-        return true;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
@@ -496,6 +494,7 @@ const UiHistoryOptions = struct {
         return null;
     }
 };
+
 const UiExecOptions = struct {
     alloc: Allocator,
     cursor_idx: usize = 0,
@@ -514,7 +513,7 @@ const UiExecOptions = struct {
         a.destroy(@as(*UiExecOptions, @alignCast(@ptrCast(comp.state))));
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) bool {
+    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
 
         const drawn = drawPathlist(
@@ -526,7 +525,6 @@ const UiExecOptions = struct {
             box,
         ) catch @panic("drawing failed");
         exoptions.drawn = drawn;
-        return true;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
