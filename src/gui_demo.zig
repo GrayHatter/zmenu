@@ -1,35 +1,36 @@
+const charcoal = @import("charcoal.zig");
+
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     const alloc = gpa.allocator();
 
-    var zm: ZMenu = try .init();
     const box: Buffer.Box = .wh(1000, 1000);
 
-    try zm.wayland.init(box);
-    defer zm.raze();
+    var char: charcoal.Charcoal = try .init();
+    try char.connect();
+    try char.wayland.resize(box);
+    defer char.raze();
 
     var root = ui.Component{
         .vtable = .auto(struct {}),
         .box = box,
         .children = &.{},
     };
-    zm.ui_root = &root;
+    char.ui.root = &root;
 
-    const shm = zm.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
+    const shm = char.wayland.shm orelse return error.NoWlShm;
+    const buffer: Buffer = try .init(shm, box, "buffer1");
     defer buffer.raze();
-    const colors: Buffer = try .init(shm, box, "zmenu-buffer2");
+    const colors: Buffer = try .init(shm, box, "buffer2");
     defer colors.buffer.destroy();
     try drawColors(box.w, buffer, colors);
 
-    try zm.wayland.roundtrip();
+    try char.wayland.roundtrip();
 
-    const surface = zm.wayland.surface orelse return error.NoSurface;
+    const surface = char.wayland.surface orelse return error.NoSurface;
     surface.attach(colors.buffer, 0, 0);
     surface.commit();
-    try zm.wayland.roundtrip();
-
-    //zm.wayland.toplevel.?.setMaxSize(size, size);
+    try char.wayland.roundtrip();
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
@@ -69,8 +70,8 @@ pub fn main() !void {
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 800, 100, 50), .hex(0xffff00ff));
 
     var i: usize = 0;
-    while (zm.running) {
-        switch (zm.wayland.display.dispatch()) {
+    while (char.wayland.running) {
+        switch (char.wayland.display.dispatch()) {
             .SUCCESS => {},
             else => |w| {
                 std.debug.print("wut {}\n", .{w});
@@ -187,12 +188,7 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
 const Buffer = @import("Buffer.zig");
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
-const listeners = @import("listeners.zig").Listeners(ZMenu);
-const ZMenu = @import("ZMenu.zig");
 const ui = @import("ui.zig");
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const wayland = @import("wayland");
-const wl = wayland.client.wl;
-const Xdg = wayland.client.xdg;
