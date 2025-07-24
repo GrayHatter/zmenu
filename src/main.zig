@@ -3,35 +3,25 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     var zm: ZMenu = try .init();
-    const box: Buffer.Box = .wh(600, 480);
 
+    const box: Buffer.Box = .wh(600, 480);
     try zm.wayland.init(box);
     defer zm.raze();
     root_zmenu = &zm;
 
-    var ui_options_children = [_]ui.Component{
-        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
-        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
-    };
-
-    var ui_children = [_]ui.Component{
-        .{ .vtable = .auto(UiCommandBox), .children = &.{} },
-        .{ .vtable = .auto(UiOptions), .children = &ui_options_children },
-    };
+    const shm = zm.wayland.shm orelse return error.NoWlShm;
+    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
+    defer buffer.raze();
 
     var root = ui.Component{
         .vtable = .auto(UiRoot),
         .box = box,
-        .children = &ui_children,
+        .children = &UiRoot.ui_children,
     };
     zm.ui_root = &root;
 
     try root.init(alloc, box);
     defer root.raze(alloc);
-
-    const shm = zm.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, box, "zmenu-buffer1");
-    defer buffer.raze();
 
     root.background(&buffer, box);
 
@@ -237,6 +227,16 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
 }
 
 const UiRoot = struct {
+    var ui_options_children = [_]ui.Component{
+        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
+        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
+    };
+
+    var ui_children = [_]ui.Component{
+        .{ .vtable = .auto(UiCommandBox), .children = &.{} },
+        .{ .vtable = .auto(UiOptions), .children = &ui_options_children },
+    };
+
     pub fn background(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
     }

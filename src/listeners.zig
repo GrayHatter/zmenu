@@ -6,6 +6,9 @@ pub fn Listeners(T: type) type {
                 .global => |global| {
                     if (orderZ(u8, global.interface, wl.Compositor.interface.name) == .eq) {
                         zm.wayland.compositor = r.bind(global.name, wl.Compositor, @min(global.version, wl.Compositor.generated_version)) catch return;
+                    } else if (orderZ(u8, global.interface, wl.Output.interface.name) == .eq) {
+                        zm.wayland.output = r.bind(global.name, wl.Output, @min(global.version, wl.Output.generated_version)) catch return;
+                        zm.wayland.output.?.setListener(*T, outputEvent, zm);
                     } else if (orderZ(u8, global.interface, wl.Shm.interface.name) == .eq) {
                         zm.wayland.shm = r.bind(global.name, wl.Shm, @min(global.version, wl.Shm.generated_version)) catch return;
                     } else if (orderZ(u8, global.interface, Xdg.WmBase.interface.name) == .eq) {
@@ -22,6 +25,26 @@ pub fn Listeners(T: type) type {
                 },
                 .global_remove => {},
             }
+        }
+
+        fn outputEvent(_: *wl.Output, event: wl.Output.Event, _: *T) void {
+            if (debug_wl) switch (event) {
+                .geometry => |geo| {
+                    std.debug.print("geo {}\n", .{geo});
+                    std.debug.print("    make {s}\n", .{std.mem.span(geo.make)});
+                    std.debug.print("    model {s}\n", .{std.mem.span(geo.model)});
+                },
+                .mode => |mode| {
+                    std.debug.print("    mode {}\n", .{mode.flags});
+                    std.debug.print("    width {}\n", .{mode.width});
+                    std.debug.print("    height {}\n", .{mode.height});
+                    std.debug.print("    refresh {}\n", .{mode.refresh});
+                },
+                .scale => |scale| std.debug.print("    scale {}\n", .{scale.factor}),
+                .name => |nameZ| std.debug.print("    name {s}\n", .{std.mem.span(nameZ.name)}),
+                .description => |descZ| std.debug.print("    description {s}\n", .{std.mem.span(descZ.description)}),
+                .done => std.debug.print("done\n", .{}),
+            };
         }
 
         pub fn xdgSurfaceEvent(xdg_surface: *Xdg.Surface, event: Xdg.Surface.Event, _: *T) void {

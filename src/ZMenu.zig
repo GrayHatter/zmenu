@@ -12,6 +12,7 @@ pub const Wayland = struct {
 
     compositor: ?*wl.Compositor = null,
     shm: ?*wl.Shm = null,
+    output: ?*wl.Output = null,
     wm_base: ?*Xdg.WmBase = null,
     surface: ?*wl.Surface = null,
     xdgsurface: ?*Xdg.Surface = null,

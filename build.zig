@@ -20,6 +20,7 @@ pub fn build(b: *Build) !void {
     // global interface, in this example wl_keyboard, wl_pointer, xdg_surface,
     // xdg_toplevel, etc. would be generated as well.
     scanner.generate("wl_compositor", 4);
+    scanner.generate("wl_output", 4);
     scanner.generate("wl_seat", 4);
     scanner.generate("wl_shm", 1);
     scanner.generate("xdg_wm_base", 7);

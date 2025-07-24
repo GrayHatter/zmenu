@@ -1,7 +1,10 @@
-buffer: *wl.Buffer,
 raw: []u32,
+pool: *wl.ShmPool,
+buffer: *wl.Buffer,
 width: u32,
 height: u32,
+stride: u32,
+
 damaged: Box = .zero,
 
 const Buffer = @This();
@@ -168,17 +171,20 @@ pub const Box = struct {
 };
 
 pub fn init(shm: *wl.Shm, box: Box, name: []const u8) !Buffer {
-    const buffer, const raw = try newPool(shm, @intCast(box.w), @intCast(box.h), name);
+    const pool, const buffer, const raw = try newPool(shm, @intCast(box.w), @intCast(box.h), name);
     return .{
         .buffer = buffer,
         .raw = raw,
         .width = @intCast(box.w),
         .height = @intCast(box.h),
+        .stride = @intCast(box.w * 4),
+        .pool = pool,
     };
 }
 
 pub fn raze(b: Buffer) void {
     b.buffer.destroy();
+    b.pool.destroy();
 }
 
 pub fn getDamaged(b: *Buffer) Box {
@@ -408,7 +414,7 @@ pub fn drawFont(b: Buffer, T: type, color: T, box: Box, src: []const u8) void {
     }
 }
 
-fn newPool(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !struct { *wl.Buffer, []u32 } {
+fn newPool(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !struct { *wl.ShmPool, *wl.Buffer, []u32 } {
     const stride = width * 4;
     const size: usize = stride * height;
 
@@ -424,12 +430,8 @@ fn newPool(shm: *wl.Shm, width: u32, height: u32, name: []const u8) !struct { *w
     );
 
     const pool = try shm.createPool(fd, @intCast(size));
-    defer pool.destroy();
-
-    return .{
-        try pool.createBuffer(0, @intCast(width), @intCast(height), @intCast(stride), .argb8888),
-        @ptrCast(data),
-    };
+    const buffer = try pool.createBuffer(0, @intCast(width), @intCast(height), @intCast(stride), .argb8888);
+    return .{ pool, buffer, @ptrCast(data) };
 }
 
 const std = @import("std");
