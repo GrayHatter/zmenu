@@ -273,6 +273,7 @@ const UiRoot = struct {
                             }
                         } else |_| @panic("everyone knows fork can't fail");
                     }
+                    return true;
                 },
                 .escape => {
                     const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
@@ -286,11 +287,12 @@ const UiRoot = struct {
                     } else {
                         root_zmenu.end();
                     }
+                    return true;
                 },
                 else => {},
             },
         }
-        return true;
+        return false;
     }
 
     fn exec(cmd: []const u8) !noreturn {
@@ -359,13 +361,16 @@ const UiCommandBox = struct {
         switch (evt.key) {
             .char => |chr| textbox.key_buffer.appendAssumeCapacity(chr),
             .ctrl => |ctrl| switch (ctrl) {
-                .backspace => _ = textbox.key_buffer.pop(),
+                .backspace => {
+                    _ = textbox.key_buffer.pop();
+                    return true;
+                },
                 .enter => {},
                 .escape => {},
                 else => {},
             },
         }
-        return true;
+        return false;
     }
 };
 
@@ -405,6 +410,7 @@ const UiHistoryOptions = struct {
     alloc: Allocator,
     cursor_idx: usize = 0,
     drawn: usize = 0,
+    found: usize = 0,
 
     pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
         const options: *UiHistoryOptions = try a.create(UiHistoryOptions);
@@ -421,7 +427,7 @@ const UiHistoryOptions = struct {
     pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
 
-        const drawn = drawHistory(
+        const drawn, const found = drawHistory(
             hist.alloc,
             buffer,
             hist.cursor_idx,
@@ -430,27 +436,31 @@ const UiHistoryOptions = struct {
             box,
         ) catch @panic("drawing failed");
         hist.drawn = drawn;
+        hist.found = found;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
         if (evt.up) return false;
         const histopt: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
-            .ctrl => |ctrl| switch (ctrl) {
-                .arrow_up => histopt.cursor_idx -|= 1,
-                .arrow_down => histopt.cursor_idx +|= 1,
-                .tab => {
-                    if (evt.mods.shift)
-                        histopt.cursor_idx -|= 1
-                    else
-                        histopt.cursor_idx +|= 1;
-                },
-                else => {},
+            .ctrl => |ctrl| {
+                switch (ctrl) {
+                    .arrow_up => histopt.cursor_idx -|= 1,
+                    .arrow_down => histopt.cursor_idx +|= 1,
+                    .tab => {
+                        if (evt.mods.shift)
+                            histopt.cursor_idx -|= 1
+                        else
+                            histopt.cursor_idx +|= 1;
+                    },
+                    else => return false,
+                }
+                return true;
             },
             else => {},
         }
         //std.debug.print("exec keyevent {}\n", .{evt});
-        return true;
+        return false;
     }
 
     fn drawHistory(
@@ -460,14 +470,17 @@ const UiHistoryOptions = struct {
         cmds: []Command,
         prefix: []const u8,
         box: Buffer.Box,
-    ) !usize {
+    ) !struct { usize, usize } {
         var fillbox = box;
         fillbox.x -|= 5;
         buf.drawRectangleFill(Buffer.ARGB, fillbox, .alpha(.ash_gray, 0x7c));
         var drawn: usize = 0;
+        var found: usize = 0;
         for (cmds) |cmd| {
             const y = box.y + 20 + 20 * (drawn);
             if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
+                found += 1;
+                if (drawn > 4) continue;
                 try drawText(a, &glyph_cache, buf, cmd.text, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
                 drawn += 1;
                 if (drawn == highlighted) {
@@ -475,10 +488,8 @@ const UiHistoryOptions = struct {
                     buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
                 }
             }
-
-            if (drawn > 4) break;
         }
-        return drawn;
+        return .{ drawn, found };
     }
 
     fn getExec(hist: *UiHistoryOptions, str: []const u8) ?[]const u8 {
@@ -501,6 +512,7 @@ const UiExecOptions = struct {
     cursor_idx: usize = 0,
     history_count: usize = 0,
     drawn: usize = 0,
+    found: usize = 0,
 
     pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
         const options: *UiExecOptions = try a.create(UiExecOptions);
@@ -517,15 +529,17 @@ const UiExecOptions = struct {
     pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
 
-        const drawn = drawPathlist(
+        const drawn, const found = drawPathlist(
             exoptions.alloc,
             buffer,
             exoptions.cursor_idx -| exoptions.history_count,
+            9 - exoptions.history_count,
             sys_exes.items,
             ui_key_buffer.items,
             box,
         ) catch @panic("drawing failed");
         exoptions.drawn = drawn;
+        exoptions.found = found;
     }
 
     pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
@@ -552,15 +566,19 @@ const UiExecOptions = struct {
         a: Allocator,
         buf: *const Buffer,
         highlighted: usize,
+        allowed: usize,
         bins: []const []const u8,
         prefix: []const u8,
         box: Buffer.Box,
-    ) !usize {
-        if (prefix.len == 0 or bins.len == 0) return 0;
+    ) !struct { usize, usize } {
+        if (prefix.len == 0 or bins.len == 0) return .{ 0, 0 };
         var drawn: usize = 0;
+        var found: usize = 0;
         for (bins) |bin| {
             const y = box.y + 20 + 20 * (drawn);
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
+                found += 1;
+                if (drawn > allowed) continue;
                 try drawText(a, &glyph_cache, buf, bin, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
                 drawn += 1;
                 if (drawn == highlighted) {
@@ -568,14 +586,13 @@ const UiExecOptions = struct {
                     buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
                 }
             }
-            if (drawn > 6) break;
         }
         if (highlighted > drawn and drawn > 0) {
             const y = box.y + 20 * (drawn - 1);
             buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
             buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
         }
-        return drawn;
+        return .{ drawn, found };
     }
     fn getExec(exc: *UiExecOptions, str: []const u8, hdrawn: usize) ?[]const u8 {
         const cursor = exc.cursor_idx -| hdrawn;
