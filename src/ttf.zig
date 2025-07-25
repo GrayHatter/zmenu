@@ -1,5 +1,5 @@
 head: Head,
-maxp: Maxp.Table,
+maxp: Maxp,
 cmap: Cmap,
 loca: LocaSlice,
 glyf: Glyph.Table,
@@ -13,6 +13,7 @@ const Ttf = @This();
 const Head = @import("ttf/tables/Head.zig");
 const HeadTable = Head;
 const Maxp = @import("ttf/tables/Maxp.zig");
+const MaxpTable = Maxp;
 const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
 const Hhea = @import("ttf/tables/Hhea.zig");
@@ -113,12 +114,12 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     //const table_directory_start = @bitSizeOf(OffsetTable) / 8;
     //const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
     const table_entries: [*]TableDirectoryEntry = @alignCast(@ptrCast(data));
-    var head: ?HeadTable = null;
-    var maxp: ?Maxp.Table = null;
-    var cmap: ?CmapTable = null;
+    var head: ?Head = null;
+    var maxp: ?Maxp = null;
+    var cmap: ?Cmap = null;
     var glyf: ?Glyph.Table = null;
     var loca: ?LocaSlice = null;
-    var hhea: ?HheaTable = null;
+    var hhea: ?Hhea = null;
     var hmtx: ?HmtxTable = null;
 
     for (table_entries[0..offset_table.num_tables]) |entry_big| {
@@ -136,7 +137,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
                     else => @panic("these are the only two options, I promise!"),
                 };
             },
-            .maxp => maxp = fixEndianness(std.mem.bytesToValue(Maxp.Table, tableFromEntry(font_data, entry))),
+            .maxp => maxp = .fromBytes(tableFromEntry(font_data, entry)),
             .cmap => cmap = .init(tableFromEntry(font_data, entry)),
             .glyf => glyf = .init(tableFromEntry(font_data, entry)),
             .hmtx => hmtx = .init(tableFromEntry(font_data, entry)),
