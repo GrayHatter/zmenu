@@ -1,7 +1,13 @@
 zig-out/*
 .zig-cache/*
+
+
 fonts/*.zip
 fonts/*.ttf
 font.ttf
+font*.ttf
+
 .zmenu_history
 .zmenu_history.new
+
+ign/**
