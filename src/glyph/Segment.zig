@@ -16,7 +16,7 @@ pub const Segment = union(enum) {
 };
 
 pub const Iterator = struct {
-    glyph: Glyph.Simple,
+    glyph: Glyf.Simple,
     x_acc: i16 = 0,
     y_acc: i16 = 0,
 
@@ -24,7 +24,7 @@ pub const Iterator = struct {
     contour_idx: usize = 0,
     last_contour_last_point: FPoint = .{ 0, 0 },
 
-    pub fn init(glyph: Glyph.Simple) Iterator {
+    pub fn init(glyph: Glyf.Simple) Iterator {
         return .{
             .glyph = glyph,
         };
@@ -539,3 +539,4 @@ test "bezier solving" {
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Glyph = @import("../Glyph.zig");
+const Glyf = @import("../ttf/tables/Glyf.zig");

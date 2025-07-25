@@ -5,98 +5,42 @@ glyph: Type,
 
 const Glyph = @This();
 
-pub const Type = union(enum) {
-    simple: Simple,
-    compound: Compound,
-};
+pub fn renderSimpleSize(glyph: Glyf.Simple, bbox: BBox, canvas: *Canvas, ext: RenderExtra) !void {
+    var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
+    var iter = Glyph.Segment.Iterator.init(glyph);
+    while (iter.next()) |item| {
+        try curves.append(item);
+    }
 
-pub const Simple = struct {
-    end_pts_of_contours: []u16,
-    instruction_length: u16,
-    //instructions: []u8,
-    flags: []Flags,
-    x_coordinates: []i16,
-    y_coordinates: []i16,
+    var y = bbox.min_y;
+    while (y < bbox.max_y) : (y += 1) {
+        const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
 
-    fl_ptr: []const u8,
-    xc_ptr: []const u8,
-    yc_ptr: []const u8,
-
-    pub const Flags = packed struct(u8) {
-        on_curve_point: bool,
-        x_short_vector: bool,
-        y_short_vector: bool,
-        repeat_flag: bool,
-        x_is_same_or_positive_x_short_vector: bool,
-        y_is_same_or_positive_y_short_vector: bool,
-        overlap_simple: bool,
-        reserved: bool,
-
-        pub const Variant = enum {
-            short_pos,
-            short_neg,
-            long,
-            repeat,
-        };
-
-        pub fn variant(f: Flags, comptime xy: enum { x, y }) Variant {
-            return switch (comptime xy) {
-                .x => switch (f.x_short_vector) {
-                    true => switch (f.x_is_same_or_positive_x_short_vector) {
-                        true => .short_pos,
-                        false => .short_neg,
-                    },
-                    false => switch (f.x_is_same_or_positive_x_short_vector) {
-                        true => .repeat,
-                        false => .long,
-                    },
-                },
-                .y => switch (f.y_short_vector) {
-                    true => switch (f.y_is_same_or_positive_y_short_vector) {
-                        true => .short_pos,
-                        false => .short_neg,
-                    },
-                    false => switch (f.y_is_same_or_positive_y_short_vector) {
-                        true => .repeat,
-                        false => .long,
-                    },
-                },
-            };
-        }
-    };
-
-    pub fn renderSize(glyph: Simple, bbox: BBox, canvas: *Canvas, ext: RenderExtra) !void {
-        var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
-        var iter = Glyph.Segment.Iterator.init(glyph);
-        while (iter.next()) |item| {
-            try curves.append(item);
-        }
-
-        var y = bbox.min_y;
-        while (y < bbox.max_y) : (y += 1) {
-            const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
-
-            var winding_count: i64 = 0;
-            var start: i64 = 0;
-            for (row_curve_points.slice()) |point| {
-                if (point.entering == false) {
-                    winding_count -= 1;
-                } else {
-                    winding_count += 1;
-                    if (winding_count == 1) {
-                        start = point.x_pos;
-                    }
+        var winding_count: i64 = 0;
+        var start: i64 = 0;
+        for (row_curve_points.slice()) |point| {
+            if (point.entering == false) {
+                winding_count -= 1;
+            } else {
+                winding_count += 1;
+                if (winding_count == 1) {
+                    start = point.x_pos;
                 }
-                // NOTE: Always see true first due to sorting
-                if (winding_count == 0) {
-                    const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
-                    const left = @min(start, point.x_pos) + ext.x_offset;
-                    const right = @max(start, point.x_pos) + ext.x_offset;
-                    canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
-                }
+            }
+            // NOTE: Always see true first due to sorting
+            if (winding_count == 0) {
+                const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
+                const left = @min(start, point.x_pos) + ext.x_offset;
+                const right = @max(start, point.x_pos) + ext.x_offset;
+                canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
             }
         }
     }
+}
+
+pub const Type = union(enum) {
+    simple: Glyf.Simple,
+    compound: Compound,
 };
 
 pub const RenderExtra = struct {
@@ -272,12 +216,12 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !R
     );
 
     switch (glyph.glyph) {
-        .simple => |s| try s.renderSize(bbox, &canvas, ext),
+        .simple => |s| try renderSimpleSize(s, bbox, &canvas, ext),
         .compound => |c| for (c.components) |com| {
             const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
             const next = try ttf.glyf.glyph(alloc, start, end);
             if (next.glyph != .simple) @panic("something's fucky");
-            try next.glyph.simple.renderSize(bbox, &canvas, .{
+            try renderSimpleSize(next.glyph.simple, bbox, &canvas, .{
                 .x_offset = com.arg0,
                 .y_offset = com.arg1,
                 .size = ext.size,

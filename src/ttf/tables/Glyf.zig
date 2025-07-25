@@ -10,6 +10,62 @@ pub const Header = packed struct {
     y_max: i16,
 };
 
+pub const Simple = struct {
+    end_pts_of_contours: []u16,
+    instruction_length: u16,
+    //instructions: []u8,
+    flags: []Flags,
+    x_coordinates: []i16,
+    y_coordinates: []i16,
+
+    fl_ptr: []const u8,
+    xc_ptr: []const u8,
+    yc_ptr: []const u8,
+
+    pub const Flags = packed struct(u8) {
+        on_curve_point: bool,
+        x_short_vector: bool,
+        y_short_vector: bool,
+        repeat_flag: bool,
+        x_is_same_or_positive_x_short_vector: bool,
+        y_is_same_or_positive_y_short_vector: bool,
+        overlap_simple: bool,
+        reserved: bool,
+
+        pub const Variant = enum {
+            short_pos,
+            short_neg,
+            long,
+            repeat,
+        };
+
+        pub fn variant(f: Flags, comptime xy: enum { x, y }) Variant {
+            return switch (comptime xy) {
+                .x => switch (f.x_short_vector) {
+                    true => switch (f.x_is_same_or_positive_x_short_vector) {
+                        true => .short_pos,
+                        false => .short_neg,
+                    },
+                    false => switch (f.x_is_same_or_positive_x_short_vector) {
+                        true => .repeat,
+                        false => .long,
+                    },
+                },
+                .y => switch (f.y_short_vector) {
+                    true => switch (f.y_is_same_or_positive_y_short_vector) {
+                        true => .short_pos,
+                        false => .short_neg,
+                    },
+                    false => switch (f.y_is_same_or_positive_y_short_vector) {
+                        true => .repeat,
+                        false => .long,
+                    },
+                },
+            };
+        }
+    };
+};
+
 pub fn init(bytes: []const u8) Glyf {
     return .{
         .data = bytes,
@@ -179,5 +235,4 @@ const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 
 const Glyph = @import("../../Glyph.zig");
-const Simple = Glyph.Simple;
 const Compound = Glyph.Compound;
