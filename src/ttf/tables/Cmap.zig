@@ -177,7 +177,7 @@ pub fn readSubtableFormat4(self: Cmap, offset: usize) !SubtableFormat4 {
 }
 
 pub inline fn byteSwap(val: anytype) @TypeOf(val) {
-    if (builtin.cpu.arch.endian() == .big) {
+    if (comptime builtin.cpu.arch.endian() == .big) {
         return val;
     }
     return @byteSwap(val);

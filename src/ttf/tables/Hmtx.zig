@@ -40,7 +40,7 @@ fn loadHorMetric(self: Hmtx, idx: usize) LongHorMetric {
 
 pub inline fn byteSwap(val: anytype) @TypeOf(val) {
     const builtin = @import("builtin");
-    if (builtin.cpu.arch.endian() == .big) {
+    if (comptime builtin.cpu.arch.endian() == .big) {
         return val;
     }
     return @byteSwap(val);
