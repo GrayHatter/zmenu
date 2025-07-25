@@ -109,11 +109,11 @@ const TableDirectoryEntry = extern struct {
 pub fn init(font_data: []align(2) u8) !Ttf {
     var data: []align(2) u8 = font_data;
     const offset_table: OffsetTable = .fromBytes(data);
-    //data = data[@bitSizeOf(OffsetTable) / 8 ..];
+    data = data[OffsetTable.SIZE..];
     //const table_directory_start = @bitSizeOf(OffsetTable) / 8;
     //const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
-    const table_entries: [*]TableDirectoryEntry = @alignCast(@ptrCast(data[OffsetTable.SIZE..]));
-    var head: ?Head.Table = null;
+    const table_entries: [*]TableDirectoryEntry = @alignCast(@ptrCast(data));
+    var head: ?HeadTable = null;
     var maxp: ?Maxp.Table = null;
     var cmap: ?CmapTable = null;
     var glyf: ?Glyph.Table = null;
@@ -127,7 +127,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
         const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
 
         switch (tag) {
-            .head => head = fixEndianness(std.mem.bytesToValue(Head.Table, tableFromEntry(font_data, entry))),
+            .head => head = .fromBytes(tableFromEntry(font_data, entry)),
             .hhea => hhea = fixEndianness(std.mem.bytesToValue(HheaTable, tableFromEntry(font_data, entry))),
             .loca => {
                 loca = switch (head.?.index_to_loc_format) {
@@ -167,8 +167,8 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     };
 }
 
-fn tableFromEntry(font_data: []u8, entry: TableDirectoryEntry) []u8 {
-    return font_data[entry.offset .. entry.offset + entry.length];
+fn tableFromEntry(font_data: []align(2) u8, entry: TableDirectoryEntry) []align(2) u8 {
+    return @alignCast(font_data[entry.offset .. entry.offset + entry.length]);
 }
 
 fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
