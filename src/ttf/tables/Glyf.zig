@@ -172,6 +172,31 @@ pub const Compound = struct {
         transform: Transform,
     };
 
+    pub fn init(alloc: Allocator, data: []const u8) !Compound {
+        var runtime_parser = RuntimeParser{ .data = data };
+        _ = runtime_parser.readVal(Header);
+        var clist: std.ArrayList(Compound.Component) = .init(alloc);
+        while (true) {
+            const flags: Compound.Flags = @bitCast(runtime_parser.readVal(u16));
+            const index: u16 = runtime_parser.readVal(u16);
+            const arg0: i16, const arg1: i16 = if (flags.args_are_words)
+                .{ runtime_parser.readVal(i16), runtime_parser.readVal(i16) }
+            else
+                .{ runtime_parser.readVal(i8), runtime_parser.readVal(i8) };
+            const transform = Compound.getTransform(flags, &runtime_parser);
+            try clist.append(.{
+                .flag = flags,
+                .index = index,
+                .arg0 = arg0,
+                .arg1 = arg1,
+                .transform = transform,
+            });
+            if (!flags.more_components) break;
+        }
+
+        return .{ .components = try clist.toOwnedSlice() };
+    }
+
     fn getED(f: Flags) struct { f16, f16 } {
         const _f8 = 0;
         const _f16 = 0;
@@ -189,7 +214,7 @@ pub const Compound = struct {
         }
     }
 
-    pub fn getTransform(f: Flags, rp: *Glyf.RuntimeParser) Transform {
+    fn getTransform(f: Flags, rp: *Glyf.RuntimeParser) Transform {
         if (!f.comp_has_scale and !f.x_and_y_scales and !f.two_by_two_scales) return .{ .scale = 1 };
 
         if (f.comp_has_scale) {
@@ -260,36 +285,11 @@ pub fn glyph(t: Glyf, alloc: Allocator, start: usize, end: usize) !Glyph {
         .header = header,
         .src_data = @alignCast(t.data[start..end]),
         .glyph = if (header.number_of_contours < 0) .{
-            .compound = try t.compound(alloc, start, end),
+            .compound = try .init(alloc, t.data[start..end]),
         } else .{
             .simple = try .init(alloc, t.data[start..end]),
         },
     };
-}
-
-pub fn compound(self: Glyf, alloc: Allocator, start: usize, end: usize) !Compound {
-    var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
-    _ = runtime_parser.readVal(Header);
-    var clist: std.ArrayList(Compound.Component) = .init(alloc);
-    while (true) {
-        const flags: Compound.Flags = @bitCast(runtime_parser.readVal(u16));
-        const index: u16 = runtime_parser.readVal(u16);
-        const arg0: i16, const arg1: i16 = if (flags.args_are_words)
-            .{ runtime_parser.readVal(i16), runtime_parser.readVal(i16) }
-        else
-            .{ runtime_parser.readVal(i8), runtime_parser.readVal(i8) };
-        const transform = Compound.getTransform(flags, &runtime_parser);
-        try clist.append(.{
-            .flag = flags,
-            .index = index,
-            .arg0 = arg0,
-            .arg1 = arg1,
-            .transform = transform,
-        });
-        if (!flags.more_components) break;
-    }
-
-    return .{ .components = try clist.toOwnedSlice() };
 }
 
 pub const RuntimeParser = struct {
