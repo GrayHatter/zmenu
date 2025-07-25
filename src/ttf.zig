@@ -2,7 +2,7 @@ head: Head,
 maxp: Maxp,
 cmap: Cmap,
 loca: Loca,
-glyf: Glyph.Table,
+glyf: Glyf,
 hhea: Hhea,
 hmtx: Hmtx,
 
@@ -18,8 +18,9 @@ const Cmap = tables.Cmap;
 const Hhea = tables.Hhea;
 const Hmtx = tables.Hmtx;
 const Loca = tables.Loca;
+const Glyf = tables.Glyf;
 
-pub const Glyph = @import("Glyph.zig");
+pub const Glyph2 = @import("Glyph.zig");
 
 const HeaderTag = enum {
     cmap,
@@ -50,7 +51,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     var head: ?Head = null;
     var maxp: ?Maxp = null;
     var cmap: ?Cmap = null;
-    var glyf: ?Glyph.Table = null;
+    var glyf: ?Glyf = null;
     var loca: ?Loca = null;
     var hhea: ?Hhea = null;
     var hmtx: ?Hmtx = null;
@@ -103,13 +104,13 @@ pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
     return ttf.loca.glyphOffsets(idx);
 }
 
-pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyph.Header {
+pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyf.Header {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const start, _ = ttf.offsetFromIndex(glyph_index) orelse return null;
     return ttf.glyf.glyphHeader(start);
 }
 
-pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph {
+pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph2 {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const start, const end = ttf.offsetFromIndex(glyph_index) orelse return error.EmptyGlyph;
 
@@ -141,7 +142,7 @@ pub const FunitToPixelConverter = struct {
         };
     }
 
-    pub fn pixelBoundsForGlyph(self: FunitToPixelConverter, glyph_header: Glyph.Header) [2]u16 {
+    pub fn pixelBoundsForGlyph(self: FunitToPixelConverter, glyph_header: Glyf.Header) [2]u16 {
         const width_f: f32 = @floatFromInt(glyph_header.x_max - glyph_header.x_min);
         const height_f: f32 = @floatFromInt(glyph_header.y_max - glyph_header.y_min);
 
@@ -157,8 +158,8 @@ pub const FunitToPixelConverter = struct {
     }
 };
 
-fn pointsBounds(points: []const Glyph.FPoint) Glyph.BBox {
-    var ret = Glyph.BBox.invalid;
+fn pointsBounds(points: []const Glyph2.FPoint) Glyph2.BBox {
+    var ret = Glyph2.BBox.invalid;
 
     for (points) |point| {
         ret.min_x = @min(point[0], ret.min_x);

@@ -4,6 +4,7 @@ pub const Cmap = @import("tables/Cmap.zig");
 pub const Hhea = @import("tables/Hhea.zig");
 pub const Hmtx = @import("tables/Hmtx.zig");
 pub const Loca = @import("tables/Loca.zig");
+pub const Glyf = @import("tables/Glyf.zig");
 
 pub const Offsets = packed struct {
     scaler: u32,
