@@ -16,7 +16,7 @@ const Maxp = @import("ttf/tables/Maxp.zig");
 const Cmap = @import("ttf/tables/Cmap.zig");
 const CmapTable = Cmap;
 const Hhea = @import("ttf/tables/Hhea.zig");
-const HheaTable = Hhea.Table;
+const HheaTable = Hhea;
 
 pub const LocaSlice = union(enum) {
     u16: []const u16,
@@ -128,7 +128,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
 
         switch (tag) {
             .head => head = .fromBytes(tableFromEntry(font_data, entry)),
-            .hhea => hhea = fixEndianness(std.mem.bytesToValue(HheaTable, tableFromEntry(font_data, entry))),
+            .hhea => hhea = .fromBytes(tableFromEntry(font_data, entry)),
             .loca => {
                 loca = switch (head.?.index_to_loc_format) {
                     0 => .{ .u16 = @alignCast(std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },

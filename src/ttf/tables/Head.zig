@@ -40,17 +40,7 @@ pub fn fromBytes(bytes: []align(2) u8) Head {
     };
 }
 
-const Fixed = packed struct(u32) {
-    frac: i16,
-    integer: i16,
-
-    pub fn fromBytes(bytes: []align(2) u8) Fixed {
-        return .{
-            .frac = byteSwap(@as(*i16, @ptrCast(bytes[0..])).*),
-            .integer = byteSwap(@as(*i16, @ptrCast(bytes[2..])).*),
-        };
-    }
-};
+const Fixed = @import("../Fixed.zig");
 
 pub inline fn byteSwap(val: anytype) @TypeOf(val) {
     const builtin = @import("builtin");
