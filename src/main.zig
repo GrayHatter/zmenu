@@ -75,7 +75,7 @@ pub fn main() !void {
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
-    const ttf = try Ttf.init(font);
+    const ttf = try Ttf.init(@alignCast(font));
     ttf_ptr = &ttf;
 
     glyph_cache = .init(14);

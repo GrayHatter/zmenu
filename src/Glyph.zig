@@ -323,7 +323,7 @@ test "renderSize" {
     var timer: std.time.Timer = try .start();
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
-    const ttf = try Ttf.init(font);
+    const ttf = try Ttf.init(@alignCast(font));
 
     const g = try ttf.glyphForChar(alloc, 'd');
     const rendered, _ = try g.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });

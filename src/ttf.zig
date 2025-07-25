@@ -85,6 +85,18 @@ const OffsetTable = packed struct {
     search_range: u16,
     entry_selector: u16,
     range_shift: u16,
+
+    pub const SIZE = 12;
+
+    pub fn fromBytes(bytes: []align(2) const u8) OffsetTable {
+        return .{
+            .scaler = byteSwap(@as(*const u32, @alignCast(@ptrCast(bytes))).*),
+            .num_tables = byteSwap(@as(*const u16, @ptrCast(bytes[4..])).*),
+            .search_range = byteSwap(@as(*const u16, @ptrCast(bytes[6..])).*),
+            .entry_selector = byteSwap(@as(*const u16, @ptrCast(bytes[8..])).*),
+            .range_shift = byteSwap(@as(*const u16, @ptrCast(bytes[10..])).*),
+        };
+    }
 };
 
 const TableDirectoryEntry = extern struct {
@@ -94,11 +106,13 @@ const TableDirectoryEntry = extern struct {
     length: u32,
 };
 
-pub fn init(font_data: []u8) !Ttf {
-    const offset_table = fixEndianness(std.mem.bytesToValue(OffsetTable, font_data[0 .. @bitSizeOf(OffsetTable) / 8]));
-    const table_directory_start = @bitSizeOf(OffsetTable) / 8;
-    const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
-    const table_entries = std.mem.bytesAsSlice(TableDirectoryEntry, font_data[table_directory_start..table_directory_end]);
+pub fn init(font_data: []align(2) u8) !Ttf {
+    var data: []align(2) u8 = font_data;
+    const offset_table: OffsetTable = .fromBytes(data);
+    //data = data[@bitSizeOf(OffsetTable) / 8 ..];
+    //const table_directory_start = @bitSizeOf(OffsetTable) / 8;
+    //const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
+    const table_entries: [*]TableDirectoryEntry = @alignCast(@ptrCast(data[OffsetTable.SIZE..]));
     var head: ?Head.Table = null;
     var maxp: ?Maxp.Table = null;
     var cmap: ?CmapTable = null;
@@ -107,7 +121,7 @@ pub fn init(font_data: []u8) !Ttf {
     var hhea: ?HheaTable = null;
     var hmtx: ?HmtxTable = null;
 
-    for (table_entries) |entry_big| {
+    for (table_entries[0..offset_table.num_tables]) |entry_big| {
         const entry = fixEndianness(entry_big);
         //std.debug.print("header name {s}\n", .{entry.tag});
         const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
