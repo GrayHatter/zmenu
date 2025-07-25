@@ -93,7 +93,7 @@ pub fn glyph(t: Glyf, alloc: Allocator, start: usize, end: usize) !Glyph {
         .glyph = if (header.number_of_contours < 0) .{
             .compound = try t.compound(alloc, start, end),
         } else .{
-            .simple = try t.simple(alloc, start, end),
+            .simple = try simple(alloc, t.data[start..end]),
         },
     };
 }
@@ -123,8 +123,8 @@ pub fn compound(self: Glyf, alloc: Allocator, start: usize, end: usize) !Compoun
     return .{ .components = try clist.toOwnedSlice() };
 }
 
-pub fn simple(self: Glyf, alloc: Allocator, start: usize, end: usize) !Simple {
-    var runtime_parser = RuntimeParser{ .data = self.data[start..end] };
+pub fn simple(alloc: Allocator, data: []const u8) !Simple {
+    var runtime_parser = RuntimeParser{ .data = data };
     const common = runtime_parser.readVal(Header);
 
     const end_pts_of_contours = try runtime_parser.readArray(u16, alloc, @intCast(common.number_of_contours));
@@ -137,7 +137,7 @@ pub fn simple(self: Glyf, alloc: Allocator, start: usize, end: usize) !Simple {
     const x_coords = try alloc.alloc(i16, num_contours);
     const y_coords = try alloc.alloc(i16, num_contours);
 
-    const fl_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+    const fl_ptr: []const u8 = data[runtime_parser.idx..];
     var i: usize = 0;
     while (i < num_contours) {
         defer i += 1;
@@ -153,7 +153,7 @@ pub fn simple(self: Glyf, alloc: Allocator, start: usize, end: usize) !Simple {
         }
     }
 
-    const xc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+    const xc_ptr: []const u8 = data[runtime_parser.idx..];
     for (flags, x_coords) |flag, *xc| {
         switch (flag.variant(.x)) {
             .short_pos => xc.* = runtime_parser.readVal(u8),
@@ -163,7 +163,7 @@ pub fn simple(self: Glyf, alloc: Allocator, start: usize, end: usize) !Simple {
         }
     }
 
-    const yc_ptr: []const u8 = self.data[start + runtime_parser.idx ..];
+    const yc_ptr: []const u8 = data[runtime_parser.idx..];
     for (flags, y_coords) |flag, *yc| {
         switch (flag.variant(.y)) {
             .short_pos => yc.* = runtime_parser.readVal(u8),
