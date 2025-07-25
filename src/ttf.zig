@@ -107,7 +107,7 @@ pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
 pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyf.Header {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     const start, _ = ttf.offsetFromIndex(glyph_index) orelse return null;
-    return ttf.glyf.glyphHeader(start);
+    return .fromBytes(@alignCast(ttf.glyf.data[start..]));
 }
 
 pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph2 {

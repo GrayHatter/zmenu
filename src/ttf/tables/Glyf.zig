@@ -1,4 +1,4 @@
-data: []const u8,
+data: []align(2) const u8,
 
 const Glyf = @This();
 
@@ -8,6 +8,16 @@ pub const Header = packed struct {
     y_min: i16,
     x_max: i16,
     y_max: i16,
+
+    pub fn fromBytes(bytes: []align(2) const u8) Header {
+        return .{
+            .number_of_contours = byteSwap(@as(*const i16, @ptrCast(bytes[0..])).*),
+            .x_min = byteSwap(@as(*const i16, @ptrCast(bytes[2..])).*),
+            .y_min = byteSwap(@as(*const i16, @ptrCast(bytes[4..])).*),
+            .x_max = byteSwap(@as(*const i16, @ptrCast(bytes[6..])).*),
+            .y_max = byteSwap(@as(*const i16, @ptrCast(bytes[8..])).*),
+        };
+    }
 };
 
 pub const Simple = struct {
@@ -260,34 +270,20 @@ pub const Compound = struct {
     }
 };
 
-pub fn init(bytes: []const u8) Glyf {
-    return .{
-        .data = bytes,
-    };
+pub fn init(bytes: []align(2) const u8) Glyf {
+    return .{ .data = bytes };
 }
 
-pub fn glyphHeader(self: Glyf, start: usize) Header {
-    const ptr: *align(2) const Header = @alignCast(@ptrCast(self.data[start..][0..@sizeOf(Header)]));
-
-    return .{
-        .number_of_contours = @byteSwap(ptr.number_of_contours),
-        .x_min = @byteSwap(ptr.x_min),
-        .x_max = @byteSwap(ptr.x_max),
-        .y_min = @byteSwap(ptr.y_min),
-        .y_max = @byteSwap(ptr.y_max),
-    };
-}
-
-pub fn glyph(t: Glyf, alloc: Allocator, start: usize, end: usize) !Glyph {
-    const header = t.glyphHeader(start);
+pub fn glyph(glyf: Glyf, alloc: Allocator, start: usize, end: usize) !Glyph {
+    const header: Header = .fromBytes(@alignCast(glyf.data[start..]));
 
     return .{
         .header = header,
-        .src_data = @alignCast(t.data[start..end]),
+        .src_data = @alignCast(glyf.data[start..end]),
         .glyph = if (header.number_of_contours < 0) .{
-            .compound = try .init(alloc, t.data[start..end]),
+            .compound = try .init(alloc, glyf.data[start..end]),
         } else .{
-            .simple = try .init(alloc, t.data[start..end]),
+            .simple = try .init(alloc, glyf.data[start..end]),
         },
     };
 }
@@ -318,6 +314,7 @@ fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) cons
 }
 
 fn fixEndianness(val: anytype) @TypeOf(val) {
+    const builtin = @import("builtin");
     if (builtin.cpu.arch.endian() == .big) {
         return val;
     }
@@ -335,8 +332,15 @@ fn fixEndianness(val: anytype) @TypeOf(val) {
     }
 }
 
+pub inline fn byteSwap(val: anytype) @TypeOf(val) {
+    const builtin = @import("builtin");
+    if (builtin.cpu.arch.endian() == .big) {
+        return val;
+    }
+    return @byteSwap(val);
+}
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const builtin = @import("builtin");
 
 const Glyph = @import("../../Glyph.zig");
