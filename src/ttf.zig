@@ -1,4 +1,4 @@
-head: Head.Table,
+head: Head,
 maxp: Maxp.Table,
 cmap: Cmap,
 loca: LocaSlice,
