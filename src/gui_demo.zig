@@ -72,14 +72,8 @@ pub fn main() !void {
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 800, 100, 50), .hex(0xffff00ff));
 
     var i: usize = 0;
-    while (char.wayland.running) {
-        switch (char.wayland.display.dispatch()) {
-            .SUCCESS => {},
-            else => |w| {
-                std.debug.print("wut {}\n", .{w});
-                return error.DispatchFailed;
-            },
-        }
+    while (char.wayland.connected) {
+        try char.wayland.iterate();
         i +%= 1;
         if (i % 100 == 0) {
             if (i / 100 & 1 > 0) {
