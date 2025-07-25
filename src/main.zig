@@ -341,6 +341,7 @@ const UiCommandBox = struct {
                 ui_key_buffer.items,
                 ttf_ptr.*,
                 .xywh(45, 55, root.w - 80, root.h - 80),
+                .charcoal,
             ) catch @panic("draw the textbox failed :<");
         }
     }
@@ -479,7 +480,7 @@ const UiHistoryOptions = struct {
             if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
                 found += 1;
                 if (drawn > 4) continue;
-                try drawText(a, &glyph_cache, buf, cmd.text, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
+                try drawText(a, &glyph_cache, buf, cmd.text, ttf_ptr.*, .xywh(box.x, y, box.w, 25), .charcoal);
                 drawn += 1;
                 if (drawn == highlighted) {
                     buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
@@ -581,7 +582,7 @@ const UiExecOptions = struct {
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
                 found += 1;
                 if (drawn > allowed) continue;
-                try drawText(a, &glyph_cache, buf, bin, ttf_ptr.*, .xywh(box.x, y, box.w, 25));
+                try drawText(a, &glyph_cache, buf, bin, ttf_ptr.*, .xywh(box.x, y, box.w, 25), .dark_slate_gray);
                 drawn += 1;
                 if (drawn == highlighted) {
                     buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
@@ -620,6 +621,7 @@ fn drawText(
     text: []const u8,
     ttf: Ttf,
     box: Buffer.Box,
+    color: Buffer.ARGB,
 ) !void {
     var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 14);
     defer layout_helper.glyphs.deinit();
@@ -635,7 +637,7 @@ fn drawText(
 
     for (tl.glyphs) |g| {
         const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
-        buffer.drawFont(Buffer.ARGB, .charcoal, .xywh(
+        buffer.drawFont(Buffer.ARGB, color, .xywh(
             @intCast(@as(i32, @intCast(box.x)) + g.pixel_x1),
             @intCast(@as(i32, @intCast(box.y)) - g.pixel_y1),
             @intCast(canvas.width),
