@@ -1,7 +1,7 @@
 head: Head,
 maxp: Maxp,
 cmap: Cmap,
-loca: LocaSlice,
+loca: Loca,
 glyf: Glyph.Table,
 hhea: Hhea,
 hmtx: Hmtx,
@@ -10,16 +10,14 @@ cmap_subtable: Cmap.SubtableFormat4,
 
 const Ttf = @This();
 
-const Head = @import("ttf/tables/Head.zig");
-const Maxp = @import("ttf/tables/Maxp.zig");
-const Cmap = @import("ttf/tables/Cmap.zig");
-const Hhea = @import("ttf/tables/Hhea.zig");
-const Hmtx = @import("ttf/tables/Hmtx.zig");
+const tables = @import("ttf/tables.zig");
 
-pub const LocaSlice = union(enum) {
-    u16: []const u16,
-    u32: []const u32,
-};
+const Head = tables.Head;
+const Maxp = tables.Maxp;
+const Cmap = tables.Cmap;
+const Hhea = tables.Hhea;
+const Hmtx = tables.Hmtx;
+const Loca = tables.Loca;
 
 pub const Glyph = @import("Glyph.zig");
 
@@ -44,63 +42,28 @@ const HeaderTag = enum {
     STAT,
 };
 
-const OffsetTable = packed struct {
-    scaler: u32,
-    num_tables: u16,
-    search_range: u16,
-    entry_selector: u16,
-    range_shift: u16,
-
-    pub const SIZE = 12;
-
-    pub fn fromBytes(bytes: []align(2) const u8) OffsetTable {
-        return .{
-            .scaler = byteSwap(@as(*const u32, @alignCast(@ptrCast(bytes))).*),
-            .num_tables = byteSwap(@as(*const u16, @ptrCast(bytes[4..])).*),
-            .search_range = byteSwap(@as(*const u16, @ptrCast(bytes[6..])).*),
-            .entry_selector = byteSwap(@as(*const u16, @ptrCast(bytes[8..])).*),
-            .range_shift = byteSwap(@as(*const u16, @ptrCast(bytes[10..])).*),
-        };
-    }
-};
-
-const TableDirectoryEntry = extern struct {
-    tag: [4]u8,
-    check_sum: u32,
-    offset: u32,
-    length: u32,
-};
-
 pub fn init(font_data: []align(2) u8) !Ttf {
     var data: []align(2) u8 = font_data;
-    const offset_table: OffsetTable = .fromBytes(data);
-    data = data[OffsetTable.SIZE..];
-    //const table_directory_start = @bitSizeOf(OffsetTable) / 8;
-    //const table_directory_end = table_directory_start + @bitSizeOf(TableDirectoryEntry) * offset_table.num_tables / 8;
-    const table_entries: [*]TableDirectoryEntry = @alignCast(@ptrCast(data));
+    const offset_table: tables.Offsets = .fromBytes(data);
+    data = data[tables.Offsets.SIZE..];
+    const table_entries: [*]tables.DirectoryEntry = @alignCast(@ptrCast(data));
     var head: ?Head = null;
     var maxp: ?Maxp = null;
     var cmap: ?Cmap = null;
     var glyf: ?Glyph.Table = null;
-    var loca: ?LocaSlice = null;
+    var loca: ?Loca = null;
     var hhea: ?Hhea = null;
     var hmtx: ?Hmtx = null;
 
     for (table_entries[0..offset_table.num_tables]) |entry_big| {
-        const entry = fixEndianness(entry_big);
+        const entry: tables.DirectoryEntry = .fromBigE(entry_big);
         //std.debug.print("header name {s}\n", .{entry.tag});
         const tag = std.meta.stringToEnum(HeaderTag, &entry.tag) orelse continue;
 
         switch (tag) {
             .head => head = .fromBytes(tableFromEntry(font_data, entry)),
             .hhea => hhea = .fromBytes(tableFromEntry(font_data, entry)),
-            .loca => {
-                loca = switch (head.?.index_to_loc_format) {
-                    0 => .{ .u16 = @alignCast(std.mem.bytesAsSlice(u16, tableFromEntry(font_data, entry))) },
-                    1 => .{ .u32 = @alignCast(std.mem.bytesAsSlice(u32, tableFromEntry(font_data, entry))) },
-                    else => @panic("these are the only two options, I promise!"),
-                };
-            },
+            .loca => loca = .init(@intCast(head.?.index_to_loc_format), tableFromEntry(font_data, entry)),
             .maxp => maxp = .fromBytes(tableFromEntry(font_data, entry)),
             .cmap => cmap = .init(tableFromEntry(font_data, entry)),
             .glyf => glyf = .init(tableFromEntry(font_data, entry)),
@@ -132,18 +95,12 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     };
 }
 
-fn tableFromEntry(font_data: []align(2) u8, entry: TableDirectoryEntry) []align(2) u8 {
+fn tableFromEntry(font_data: []align(2) u8, entry: tables.DirectoryEntry) []align(2) u8 {
     return @alignCast(font_data[entry.offset .. entry.offset + entry.length]);
 }
 
 pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
-    const start, const end = switch (ttf.loca) {
-        .u16 => |s| .{ @as(u32, byteSwap(s[idx])) * 2, @as(u32, byteSwap(s[idx + 1])) * 2 },
-        .u32 => |l| .{ byteSwap(l[idx]), byteSwap(l[idx + 1]) },
-    };
-
-    if (start == end) return null;
-    return .{ start, end };
+    return ttf.loca.glyphOffsets(idx);
 }
 
 pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyph.Header {
@@ -227,31 +184,6 @@ pub const Scale = struct {
         return @intFromFloat(f * s.scale);
     }
 };
-
-pub inline fn byteSwap(val: anytype) @TypeOf(val) {
-    if (builtin.cpu.arch.endian() == .big) {
-        return val;
-    }
-    return @byteSwap(val);
-}
-
-pub fn fixEndianness(val: anytype) @TypeOf(val) {
-    if (builtin.cpu.arch.endian() == .big) {
-        return val;
-    }
-
-    switch (@typeInfo(@TypeOf(val))) {
-        .@"struct" => {
-            var ret = val;
-            std.mem.byteSwapAllFields(@TypeOf(val), &ret);
-            return ret;
-        },
-        .int => {
-            return std.mem.bigToNative(@TypeOf(val), val);
-        },
-        inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
-    }
-}
 
 test "render all chars" {
     const debug_print_timing = false;
