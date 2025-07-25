@@ -41,6 +41,7 @@ pub fn fromBytes(bytes: []align(2) u8) Hhea {
 }
 
 const Fixed = @import("../Fixed.zig");
+
 pub inline fn byteSwap(val: anytype) @TypeOf(val) {
     const builtin = @import("builtin");
     if (builtin.cpu.arch.endian() == .big) {

@@ -3,21 +3,18 @@ maxp: Maxp,
 cmap: Cmap,
 loca: LocaSlice,
 glyf: Glyph.Table,
-hhea: HheaTable,
-hmtx: HmtxTable,
+hhea: Hhea,
+hmtx: Hmtx,
 
 cmap_subtable: Cmap.SubtableFormat4,
 
 const Ttf = @This();
 
 const Head = @import("ttf/tables/Head.zig");
-const HeadTable = Head;
 const Maxp = @import("ttf/tables/Maxp.zig");
-const MaxpTable = Maxp;
 const Cmap = @import("ttf/tables/Cmap.zig");
-const CmapTable = Cmap;
 const Hhea = @import("ttf/tables/Hhea.zig");
-const HheaTable = Hhea;
+const Hmtx = @import("ttf/tables/Hmtx.zig");
 
 pub const LocaSlice = union(enum) {
     u16: []const u16,
@@ -45,39 +42,6 @@ const HeaderTag = enum {
     GPOS,
     GSUB,
     STAT,
-};
-
-pub const HmtxTable = struct {
-    hmtx_bytes: []const u8,
-
-    pub const LongHorMetric = packed struct {
-        advance_width: u16,
-        left_side_bearing: i16,
-    };
-
-    pub fn init(bytes: []const u8) HmtxTable {
-        return .{ .hmtx_bytes = bytes };
-    }
-
-    pub fn getMetrics(self: HmtxTable, num_hor_metrics: usize, glyph_index: usize) LongHorMetric {
-        if (glyph_index < num_hor_metrics) {
-            return self.loadHorMetric(glyph_index);
-        } else {
-            const last = self.loadHorMetric(num_hor_metrics - 1);
-            const lsb_index = glyph_index - num_hor_metrics;
-            const lsb_offs = num_hor_metrics * @bitSizeOf(LongHorMetric) / 8 + lsb_index * 2;
-            const lsb = fixEndianness(std.mem.bytesToValue(i16, self.hmtx_bytes[lsb_offs..]));
-            return .{
-                .advance_width = last.advance_width,
-                .left_side_bearing = lsb,
-            };
-        }
-    }
-
-    fn loadHorMetric(self: HmtxTable, idx: usize) LongHorMetric {
-        const offs = idx * @bitSizeOf(LongHorMetric) / 8;
-        return fixEndianness(std.mem.bytesToValue(LongHorMetric, self.hmtx_bytes[offs..]));
-    }
 };
 
 const OffsetTable = packed struct {
@@ -120,7 +84,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     var glyf: ?Glyph.Table = null;
     var loca: ?LocaSlice = null;
     var hhea: ?Hhea = null;
-    var hmtx: ?HmtxTable = null;
+    var hmtx: ?Hmtx = null;
 
     for (table_entries[0..offset_table.num_tables]) |entry_big| {
         const entry = fixEndianness(entry_big);
@@ -154,7 +118,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
     // Magic is easy to check
     std.debug.assert(head_unwrapped.magic_number == 0x5F0F3CF5);
 
-    const subtable = try readSubtable(cmap orelse return error.NoCMAP);
+    const subtable = try (cmap orelse return error.NoCMAP).readSubtable();
 
     return .{
         .maxp = maxp orelse return error.NoMaxp,
@@ -170,27 +134,6 @@ pub fn init(font_data: []align(2) u8) !Ttf {
 
 fn tableFromEntry(font_data: []align(2) u8, entry: TableDirectoryEntry) []align(2) u8 {
     return @alignCast(font_data[entry.offset .. entry.offset + entry.length]);
-}
-
-fn readSubtable(cmap: CmapTable) !CmapTable.SubtableFormat4 {
-    const index = cmap.index();
-    const unicode_table_offs = blk: {
-        for (0..index.num_subtables) |i| {
-            const subtable = cmap.readSubtableLookup(i);
-            if (subtable.isUnicodeBmp()) {
-                break :blk subtable.offset;
-            }
-        }
-        return error.NoUnicodeBmpTables;
-    };
-
-    const format = cmap.readSubtableFormat(unicode_table_offs);
-    if (format != 4) {
-        std.log.err("Can only handle unicode format 4", .{});
-        return error.Unimplemented;
-    }
-
-    return try cmap.readSubtableFormat4(unicode_table_offs);
 }
 
 pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
@@ -216,7 +159,7 @@ pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph {
     return ttf.glyf.glyph(alloc, start, end);
 }
 
-pub fn metricsForChar(ttf: Ttf, char: u16) HmtxTable.LongHorMetric {
+pub fn metricsForChar(ttf: Ttf, char: u16) Hmtx.LongHorMetric {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
     return ttf.hmtx.getMetrics(ttf.hhea.num_of_long_hor_metrics, glyph_index);
 }

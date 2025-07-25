@@ -110,6 +110,27 @@ pub fn readSubtableLookup(self: Cmap, idx: usize) SubtableLookup {
     return .fromBytes(@alignCast(@ptrCast(self.cmap_bytes[start..])));
 }
 
+pub fn readSubtable(cmap: Cmap) !Cmap.SubtableFormat4 {
+    const idx = cmap.index();
+    const unicode_table_offs = blk: {
+        for (0..idx.num_subtables) |i| {
+            const subtable = cmap.readSubtableLookup(i);
+            if (subtable.isUnicodeBmp()) {
+                break :blk subtable.offset;
+            }
+        }
+        return error.NoUnicodeBmpTables;
+    };
+
+    const format = cmap.readSubtableFormat(unicode_table_offs);
+    if (format != 4) {
+        std.log.err("Can only handle unicode format 4", .{});
+        return error.Unimplemented;
+    }
+
+    return try cmap.readSubtableFormat4(unicode_table_offs);
+}
+
 pub fn readSubtableFormat(self: Cmap, offset: usize) u16 {
     return byteSwap(@as(*u16, @alignCast(@ptrCast(self.cmap_bytes[offset..].ptr))).*);
 }
