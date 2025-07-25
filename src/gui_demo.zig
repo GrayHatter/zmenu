@@ -1,6 +1,6 @@
 const charcoal = @import("charcoal");
 const Buffer = charcoal.Buffer;
-const ui = charcoal.ui;
+const Ui = charcoal.Ui;
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -13,7 +13,7 @@ pub fn main() !void {
     try char.wayland.resize(box);
     defer char.raze();
 
-    var root = ui.Component{
+    var root = Ui.Component{
         .vtable = .auto(struct {}),
         .box = box,
         .children = &.{},

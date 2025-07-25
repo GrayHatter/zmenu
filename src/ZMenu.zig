@@ -25,11 +25,12 @@ pub fn iterate(zm: *ZMenu) !void {
 /// where it belongs.
 pub fn end(zm: *ZMenu) void {
     zm.running = false;
+    zm.charcoal.running = false;
 }
 
 test "root" {
     _ = &std.testing.refAllDecls(@This());
-    _ = &ui;
+    _ = &Ui;
     _ = &charcoal_;
 }
 
@@ -43,4 +44,4 @@ const charcoal_ = @import("charcoal");
 const Charcoal = charcoal_.Charcoal;
 const Buffer = charcoal_.Buffer;
 const Keymap = charcoal_.Keymap;
-const ui = charcoal_.ui;
+const Ui = charcoal_.Ui;

@@ -14,14 +14,13 @@ pub fn main() !void {
     var buffer: Buffer = try .initCapacity(shm, .wh(600, 800), .wh(600, 2000), "zmenu-buffer1");
     defer buffer.raze();
 
-    var root: ui.Component = .{
+    var root: Ui.Component = .{
         .vtable = .auto(UiRoot),
         .box = box,
         .children = &UiRoot.ui_children,
     };
-    zm.charcoal.ui.root = &root;
-    try root.init(alloc, box);
-    defer root.raze(alloc);
+    try zm.charcoal.ui.init(&root, alloc, box);
+    defer zm.charcoal.ui.raze(alloc);
 
     root.background(&buffer, box);
     const surface = zm.charcoal.wayland.surface orelse return error.NoSurface;
@@ -91,30 +90,17 @@ pub fn main() !void {
     surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
     surface.commit();
 
-    var i: usize = 0;
-    var draw_count: usize = 0;
-    while (zm.running) : (i +%= 1) {
-        try zm.charcoal.wayland.iterate();
-        if (i % 1000 == 0) {
-            surface.attach(buffer.buffer, 0, 0);
-            surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
-            surface.commit();
-        }
-        if (ui_key_buffer.items.len != draw_count or root.damaged) {
-            @branchHint(.unlikely);
-            draw_count = ui_key_buffer.items.len;
-            _ = root.draw(&buffer, box);
-            surface.attach(buffer.buffer, 0, 0);
-            surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
-            surface.commit();
-            root.painted();
-        }
-    }
+    zm.charcoal.ui.active_buffer = &buffer;
+    try zm.charcoal.run();
 
     if (ui_key_buffer.items.len > 2) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
     }
 }
+
+pub const std_options: std.Options = .{
+    .log_level = .info,
+};
 
 var glyph_cache: Glyph.Cache = undefined;
 var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
@@ -123,11 +109,11 @@ var ttf_ptr: *const Ttf = undefined;
 var root_zmenu: *ZMenu = undefined;
 var command_history: []Command = undefined;
 
-pub const Options = struct {
+pub const Config = struct {
     history: bool = true,
 };
 
-fn loadRc(a: Allocator) !Options {
+fn loadRc(a: Allocator) !Config {
     const rc = std.fs.cwd().readFileAlloc(a, ".zmenurc", 0x1ffff) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return err,
@@ -226,22 +212,25 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
 }
 
 const UiRoot = struct {
-    var ui_options_children = [_]ui.Component{
+    var ui_options_children = [_]Ui.Component{
         .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
         .{ .vtable = .auto(UiExecOptions), .children = &.{} },
     };
 
-    var ui_children = [_]ui.Component{
+    var ui_children = [_]Ui.Component{
         .{ .vtable = .auto(UiCommandBox), .children = &.{} },
         .{ .vtable = .auto(UiOptions), .children = &ui_options_children },
     };
 
-    pub fn background(_: *ui.Component, b: *const Buffer, box: Buffer.Box) void {
+    pub fn background(_: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
     }
 
-    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
-        for (comp.children) |*child| _ = child.keyPress(evt);
+    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        for (comp.children) |*child| {
+            _ = child.keyPress(evt);
+            comp.damaged = child.damaged or comp.damaged;
+        }
         if (evt.up) return true;
         switch (evt.key) {
             .char => {},
@@ -276,6 +265,7 @@ const UiRoot = struct {
                     return true;
                 },
                 .escape => {
+                    comp.damaged = true;
                     const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
                     const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
                     const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
@@ -314,7 +304,7 @@ const UiCommandBox = struct {
     alloc: Allocator,
     key_buffer: std.ArrayListUnmanaged(u8),
 
-    pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
+    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
         const textbox: *UiCommandBox = try a.create(UiCommandBox);
         textbox.* = .{
             .alloc = a,
@@ -324,13 +314,13 @@ const UiCommandBox = struct {
         ui_key_buffer = &textbox.key_buffer;
     }
 
-    pub fn raze(comp: *ui.Component, a: Allocator) void {
+    pub fn raze(comp: *Ui.Component, a: Allocator) void {
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         textbox.key_buffer.deinit(a);
         a.destroy(textbox);
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, root: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, root: Buffer.Box) void {
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
@@ -355,13 +345,17 @@ const UiCommandBox = struct {
         }
     }
 
-    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         if (evt.up) return false;
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
-            .char => |chr| textbox.key_buffer.appendAssumeCapacity(chr),
+            .char => |chr| {
+                comp.damaged = true;
+                textbox.key_buffer.appendAssumeCapacity(chr);
+            },
             .ctrl => |ctrl| switch (ctrl) {
                 .backspace => {
+                    comp.damaged = true;
                     _ = textbox.key_buffer.pop();
                     return true;
                 },
@@ -375,7 +369,7 @@ const UiCommandBox = struct {
 };
 
 const UiOptions = struct {
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
         buffer.drawRectangleFill(Buffer.ARGB, history_box, .alpha(.ash_gray, 0x7c));
 
@@ -394,8 +388,11 @@ const UiOptions = struct {
         comp.children[1].draw(buffer, path_box);
     }
 
-    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
-        for (comp.children) |*c| _ = c.keyPress(evt);
+    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        for (comp.children) |*c| {
+            comp.damaged = c.damaged or comp.damaged;
+            _ = c.keyPress(evt);
+        }
 
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
         const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
@@ -412,7 +409,7 @@ const UiHistoryOptions = struct {
     drawn: usize = 0,
     found: usize = 0,
 
-    pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
+    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
         const options: *UiHistoryOptions = try a.create(UiHistoryOptions);
         options.* = .{
             .alloc = a,
@@ -420,11 +417,11 @@ const UiHistoryOptions = struct {
         comp.state = options;
     }
 
-    pub fn raze(comp: *ui.Component, a: Allocator) void {
+    pub fn raze(comp: *Ui.Component, a: Allocator) void {
         a.destroy(@as(*UiHistoryOptions, @alignCast(@ptrCast(comp.state))));
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
 
         const drawn, const found = drawHistory(
@@ -439,7 +436,7 @@ const UiHistoryOptions = struct {
         hist.found = found;
     }
 
-    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         if (evt.up) return false;
         const histopt: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
@@ -455,6 +452,7 @@ const UiHistoryOptions = struct {
                     },
                     else => return false,
                 }
+                comp.damaged = true;
                 return true;
             },
             else => {},
@@ -514,7 +512,7 @@ const UiExecOptions = struct {
     drawn: usize = 0,
     found: usize = 0,
 
-    pub fn init(comp: *ui.Component, a: Allocator, _: Buffer.Box) ui.InitError!void {
+    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
         const options: *UiExecOptions = try a.create(UiExecOptions);
         options.* = .{
             .alloc = a,
@@ -522,11 +520,11 @@ const UiExecOptions = struct {
         comp.state = options;
     }
 
-    pub fn raze(comp: *ui.Component, a: Allocator) void {
+    pub fn raze(comp: *Ui.Component, a: Allocator) void {
         a.destroy(@as(*UiExecOptions, @alignCast(@ptrCast(comp.state))));
     }
 
-    pub fn draw(comp: *ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
 
         const drawn, const found = drawPathlist(
@@ -542,20 +540,24 @@ const UiExecOptions = struct {
         exoptions.found = found;
     }
 
-    pub fn keyPress(comp: *ui.Component, evt: ui.KeyEvent) bool {
+    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         if (evt.up) return false;
         const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
         switch (evt.key) {
-            .ctrl => |ctrl| switch (ctrl) {
-                .arrow_up => exoptions.cursor_idx -|= 1,
-                .arrow_down => exoptions.cursor_idx +|= 1,
-                .tab => {
-                    if (evt.mods.shift)
-                        exoptions.cursor_idx -|= 1
-                    else
-                        exoptions.cursor_idx +|= 1;
-                },
-                else => {},
+            .ctrl => |ctrl| {
+                switch (ctrl) {
+                    .arrow_up => exoptions.cursor_idx -|= 1,
+                    .arrow_down => exoptions.cursor_idx +|= 1,
+                    .tab => {
+                        if (evt.mods.shift)
+                            exoptions.cursor_idx -|= 1
+                        else
+                            exoptions.cursor_idx +|= 1;
+                    },
+                    else => return false,
+                }
+                comp.damaged = true;
+                return true;
             },
             else => {},
         }
@@ -683,7 +685,7 @@ const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
 const ZMenu = @import("ZMenu.zig");
-const ui = charcoal.ui;
+const Ui = charcoal.Ui;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
