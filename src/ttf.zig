@@ -187,7 +187,9 @@ pub const Scale = struct {
 };
 
 test "render all chars" {
-    const debug_print_timing = false;
+    const config = @import("config");
+
+    const debug_print_timing = config.timings;
 
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();

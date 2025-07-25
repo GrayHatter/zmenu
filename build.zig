@@ -8,6 +8,10 @@ pub fn build(b: *Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const no_bin = b.option(bool, "no-bin", "do not emit binary") orelse false;
+    const testing_debug = b.option(bool, "testing-debug", "enable additional testing debugging") orelse false;
+
+    const options = b.addOptions();
+    options.addOption(bool, "timings", testing_debug);
 
     const charcoal = b.dependency("charcoal", .{ .target = target, .optimize = optimize });
 
@@ -19,6 +23,7 @@ pub fn build(b: *Build) !void {
 
     const exe = b.addExecutable(.{ .name = "zmenu", .root_module = exe_mod });
     exe.root_module.addImport("charcoal", charcoal.module("charcoal"));
+    exe.root_module.addOptions("config", options);
 
     if (no_bin) {
         b.getInstallStep().dependOn(&exe.step);
