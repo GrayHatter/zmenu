@@ -40,7 +40,7 @@ pub fn renderSimpleSize(glyph: Glyf.Simple, bbox: BBox, canvas: *Canvas, ext: Re
 
 pub const Type = union(enum) {
     simple: Glyf.Simple,
-    compound: Compound,
+    compound: Glyf.Compound,
 };
 
 pub const RenderExtra = struct {
@@ -50,121 +50,6 @@ pub const RenderExtra = struct {
     /// `Compound.Component`
     x_offset: i32 = 0,
     y_offset: i32 = 0,
-};
-
-pub const Compound = struct {
-    //Compound glyphs are glyphs made up of two or more component glyphs. A
-    //compound glyph description begins like a simple glyph description with
-    //four words describing the bounding box. It is followed by n component
-    //glyph parts. Each component glyph parts consists of a flag entry, two
-    //offset entries and from one to four transformation entries.
-
-    //The format for describing each component glyph in a compound glyph is
-    //documented in Table 17. The meanings associated with the flags in the
-    //first entry are given in Table 18.
-
-    components: []Component,
-
-    pub const Flags = packed struct(u16) {
-        args_are_words: bool,
-        args_are_xy: bool,
-        round_xy_to_grid: bool,
-        comp_has_scale: bool,
-        _obsolete: bool,
-        more_components: bool,
-        x_and_y_scales: bool,
-        two_by_two_scales: bool,
-        we_have_instructions: bool,
-        use_my_metrics: bool,
-        overlap_compound: bool,
-        _padding: u5,
-    };
-
-    pub const Transform = union(enum) {
-        scale: u16, // scale (same for x and y)
-        xy_scale: struct {
-            x: u16,
-            y: u16,
-        },
-        xy_twoby: struct {
-            x: u16,
-            z01: u16,
-            z10: u16,
-            y: u16,
-        },
-    };
-
-    /// This pretends to match the layout, but because TTF says arg0,1 can be
-    /// i8 or u8 or i16 or u16, they're set i32 here to cover all cases
-    pub const Component = struct {
-        flag: Flags,
-        index: u32,
-        arg0: i32,
-        arg1: i32,
-        transform: Transform,
-    };
-
-    fn getED(f: Flags) struct { f16, f16 } {
-        const _f8 = 0;
-        const _f16 = 0;
-        const idx_8 = 0;
-        const idx_16 = 0;
-        switch (f.args_are_xy) {
-            true => return if (f.args_are_words)
-                .{ _f16, _f16 }
-            else
-                .{ _f8, _f8 },
-            false => return if (f.args_are_words)
-                .{ idx_16, idx_16 }
-            else
-                .{ idx_8, idx_8 },
-        }
-    }
-
-    pub fn getTransform(f: Flags, rp: *Glyf.RuntimeParser) Transform {
-        if (!f.comp_has_scale and !f.x_and_y_scales and !f.two_by_two_scales) return .{ .scale = 1 };
-
-        if (f.comp_has_scale) {
-            std.debug.assert(!f.x_and_y_scales);
-            std.debug.assert(!f.two_by_two_scales);
-
-            return .{ .xy_scale = .{
-                .x = rp.readVal(u16),
-                .y = rp.readVal(u16),
-            } };
-        }
-        if (f.x_and_y_scales) {
-            std.debug.assert(!f.comp_has_scale);
-            std.debug.assert(!f.two_by_two_scales);
-            return .{ .xy_scale = .{
-                .x = rp.readVal(u16),
-                .y = rp.readVal(u16),
-            } };
-        }
-        if (f.two_by_two_scales) {
-            std.debug.assert(!f.comp_has_scale);
-            std.debug.assert(!f.two_by_two_scales);
-            return .{ .xy_twoby = .{
-                .x = rp.readVal(u16),
-                .z01 = rp.readVal(u16),
-                .z10 = rp.readVal(u16),
-                .y = rp.readVal(u16),
-            } };
-        }
-        unreachable;
-    }
-
-    fn transformation(a: i16, b: i16, c: i16, d: i16, e: i16) void {
-        const m = @max(@abs(a), @abs(b)) * if (@abs(@abs(a) - @abs(c)) <= 33 / 65536) 2 else 1;
-        const n = @max(@abs(c), @abs(d)) * if (@abs(@abs(b) - @abs(d)) <= 33 / 65536) 2 else 1;
-
-        const x = 0;
-        const y = 0;
-        const x2 = m * ((a / m) * x + (c / m) * y + e);
-        const y2 = m * ((b / n) * x + (d / n) * y + e);
-        _ = x2;
-        _ = y2;
-    }
 };
 
 pub const BBox = struct {
