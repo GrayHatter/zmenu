@@ -103,7 +103,7 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !R
     switch (glyph.glyph) {
         .simple => |s| try renderSimpleSize(s, bbox, &canvas, ext),
         .compound => |c| for (c.components) |com| {
-            const start, const end = ttf.offsetFromIndex(com.index) orelse continue;
+            const start, const end = ttf.loca.offsetBounds(com.index) orelse return error.InvalidCompenent;
             const next = try ttf.glyf.glyph(alloc, start, end);
             if (next.glyph != .simple) @panic("something's fucky");
             try renderSimpleSize(next.glyph.simple, bbox, &canvas, .{

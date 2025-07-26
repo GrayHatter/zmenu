@@ -100,19 +100,15 @@ fn tableFromEntry(font_data: []align(2) u8, entry: tables.DirectoryEntry) []alig
     return @alignCast(font_data[entry.offset .. entry.offset + entry.length]);
 }
 
-pub fn offsetFromIndex(ttf: Ttf, idx: usize) ?struct { u32, u32 } {
-    return ttf.loca.glyphOffsets(idx);
-}
-
 pub fn glyphHeaderForChar(ttf: Ttf, char: u16) ?Glyf.Header {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const start, _ = ttf.offsetFromIndex(glyph_index) orelse return null;
+    const start, _ = ttf.loca.offsetBounds(glyph_index) orelse return null;
     return .fromBytes(@alignCast(ttf.glyf.data[start..]));
 }
 
 pub fn glyphForChar(ttf: Ttf, alloc: Allocator, char: u16) !Glyph2 {
     const glyph_index = ttf.cmap_subtable.getGlyphIndex(char);
-    const start, const end = ttf.offsetFromIndex(glyph_index) orelse return error.EmptyGlyph;
+    const start, const end = ttf.loca.offsetBounds(glyph_index) orelse return error.EmptyGlyph;
 
     return ttf.glyf.glyph(alloc, start, end);
 }

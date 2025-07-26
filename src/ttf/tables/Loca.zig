@@ -15,9 +15,9 @@ pub fn init(format: i16, data: []align(2) u8) Loca {
     } };
 }
 
-pub const Offsets = struct { u32, u32 };
+pub const Bounds = struct { u32, u32 };
 
-pub fn glyphOffsets(loca: Loca, idx: usize) ?Offsets {
+pub fn offsetBounds(loca: Loca, idx: usize) ?Bounds {
     const start, const end = switch (loca.slice) {
         .u16 => |s| .{ @as(u32, byteSwap(s[idx])) * 2, @as(u32, byteSwap(s[idx + 1])) * 2 },
         .u32 => |l| .{ byteSwap(l[idx]), byteSwap(l[idx + 1]) },
