@@ -1,16 +1,49 @@
+const ZMenu = struct {
+    charcoal: Charcoal,
+    running: bool = true,
+
+    pub fn init() !ZMenu {
+        return .{
+            .charcoal = try .init(),
+        };
+    }
+
+    pub fn connect(zm: *ZMenu) !void {
+        try zm.charcoal.connect();
+    }
+
+    pub fn raze(zm: *ZMenu) void {
+        zm.charcoal.raze();
+    }
+
+    pub fn iterate(zm: *ZMenu) !void {
+        try zm.charcoal.iterate();
+    }
+
+    /// I'm not a fan of this API either, but it lives here until I can decide
+    /// where it belongs.
+    pub fn end(zm: *ZMenu) void {
+        zm.running = false;
+        zm.charcoal.running = false;
+    }
+};
+
+var zmenu: ZMenu = .{
+    .charcoal = undefined,
+};
+
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     const alloc = gpa.allocator();
 
-    var zm: ZMenu = try .init();
+    zmenu = try .init();
 
     const box: Buffer.Box = .wh(600, 300);
-    try zm.connect();
-    try zm.charcoal.wayland.resize(box);
-    defer zm.raze();
-    root_zmenu = &zm;
+    try zmenu.connect();
+    try zmenu.charcoal.wayland.resize(box);
+    defer zmenu.raze();
 
-    const shm = zm.charcoal.wayland.shm orelse return error.NoWlShm;
+    const shm = zmenu.charcoal.wayland.shm orelse return error.NoWlShm;
     var buffer: Buffer = try .initCapacity(shm, .wh(600, 800), .wh(600, 2000), "zmenu-buffer1");
     defer buffer.raze();
 
@@ -19,17 +52,17 @@ pub fn main() !void {
         .box = box,
         .children = &UiRoot.ui_children,
     };
-    try zm.charcoal.ui.init(&root, alloc, box);
-    defer zm.charcoal.ui.raze(alloc);
+    try zmenu.charcoal.ui.init(&root, alloc, box);
+    defer zmenu.charcoal.ui.raze(alloc);
 
     root.background(&buffer, box);
-    const surface = zm.charcoal.wayland.surface orelse return error.NoSurface;
+    const surface = zmenu.charcoal.wayland.surface orelse return error.NoSurface;
     surface.attach(buffer.buffer, 0, 0);
     surface.commit();
-    try zm.charcoal.wayland.roundtrip();
+    try zmenu.charcoal.wayland.roundtrip();
 
     try buffer.resize(.wh(600, 300));
-    try zm.charcoal.wayland.roundtrip();
+    try zmenu.charcoal.wayland.roundtrip();
 
     const home_dir: std.fs.Dir = h: {
         for (std.os.environ) |envZ| {
@@ -90,8 +123,8 @@ pub fn main() !void {
     surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
     surface.commit();
 
-    zm.charcoal.ui.active_buffer = &buffer;
-    try zm.charcoal.run();
+    zmenu.charcoal.ui.active_buffer = &buffer;
+    try zmenu.charcoal.run();
 
     if (ui_key_buffer.items.len > 2) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
@@ -106,7 +139,6 @@ var glyph_cache: Glyph.Cache = undefined;
 var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
-var root_zmenu: *ZMenu = undefined;
 var command_history: []Command = undefined;
 
 pub const Config = struct {
@@ -249,7 +281,7 @@ const UiRoot = struct {
                                 } else {
                                     textbox.key_buffer.clearRetainingCapacity();
                                     textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                                    root_zmenu.running = false;
+                                    zmenu.running = false;
                                 }
                             } else |_| @panic("everyone knows fork can't fail");
                         }
@@ -258,7 +290,7 @@ const UiRoot = struct {
                             if (pid == 0) {
                                 exec(textbox.key_buffer.items) catch {};
                             } else {
-                                root_zmenu.running = false;
+                                zmenu.running = false;
                             }
                         } else |_| @panic("everyone knows fork can't fail");
                     }
@@ -275,7 +307,7 @@ const UiRoot = struct {
                     } else if (textbox.key_buffer.items.len > 0) {
                         textbox.key_buffer.clearRetainingCapacity();
                     } else {
-                        root_zmenu.end();
+                        zmenu.end();
                     }
                     return true;
                 },
@@ -679,14 +711,16 @@ test {
     _ = &Ttf;
     _ = &ZMenu;
     _ = &Glyph;
+    _ = &Ui;
+    _ = &std.testing.refAllDecls(@This());
 }
 
 const charcoal = @import("charcoal");
+const Charcoal = charcoal.Charcoal;
 const Buffer = charcoal.Buffer;
 const LayoutHelper = @import("LayoutHelper.zig");
 const Ttf = @import("ttf.zig");
 const Glyph = @import("Glyph.zig");
-const ZMenu = @import("ZMenu.zig");
 const Ui = charcoal.Ui;
 
 const std = @import("std");
