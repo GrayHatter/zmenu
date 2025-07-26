@@ -178,7 +178,7 @@ test "renderSize" {
     const ttf = try Ttf.init(@alignCast(font));
 
     const g = try ttf.glyphForChar(alloc, 'd');
-    const rendered, _ = try g.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+    const rendered = try g.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
     defer alloc.free(rendered.pixels);
 
     if (false) debugGlyph(rendered);
