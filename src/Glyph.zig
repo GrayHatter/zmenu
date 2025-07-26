@@ -5,39 +5,6 @@ glyph: Type,
 
 const Glyph = @This();
 
-pub fn renderSimpleSize(glyph: Glyf.Simple, bbox: BBox, canvas: *Canvas, ext: RenderExtra) !void {
-    var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
-    var iter = Glyph.Segment.Iterator.init(glyph);
-    while (iter.next()) |item| {
-        try curves.append(item);
-    }
-
-    var y = bbox.min_y;
-    while (y < bbox.max_y) : (y += 1) {
-        const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
-
-        var winding_count: i64 = 0;
-        var start: i64 = 0;
-        for (row_curve_points.slice()) |point| {
-            if (point.entering == false) {
-                winding_count -= 1;
-            } else {
-                winding_count += 1;
-                if (winding_count == 1) {
-                    start = point.x_pos;
-                }
-            }
-            // NOTE: Always see true first due to sorting
-            if (winding_count == 0) {
-                const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
-                const left = @min(start, point.x_pos) + ext.x_offset;
-                const right = @max(start, point.x_pos) + ext.x_offset;
-                canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
-            }
-        }
-    }
-}
-
 pub const Type = union(enum) {
     simple: Glyf.Simple,
     compound: Glyf.Compound,
@@ -50,6 +17,37 @@ pub const RenderExtra = struct {
     /// `Compound.Component`
     x_offset: i32 = 0,
     y_offset: i32 = 0,
+};
+
+pub const Cache = struct {
+    map: std.AutoHashMapUnmanaged(u8, Canvas) = .{},
+    size: f32,
+
+    pub fn init(size: f32) Cache {
+        return .{
+            .size = size,
+        };
+    }
+
+    pub fn raze(c: *Cache, a: Allocator) void {
+        var kitr = c.map.keyIterator();
+        while (kitr.next()) |key| {
+            _ = c.map.fetchRemove(key.*);
+            // TODO clean up glyph canvas
+        }
+        c.map.deinit(a);
+    }
+
+    pub fn get(c: *Cache, a: Allocator, ttf: Ttf, char: u8) !*const Canvas {
+        const gop = try c.map.getOrPut(a, char);
+        errdefer _ = c.map.remove(char);
+        if (!gop.found_existing) {
+            const g = try ttf.glyphForChar(a, char);
+            const rendered = try g.renderSize(a, ttf, .{ .size = c.size, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+            gop.value_ptr.* = rendered;
+        }
+        return gop.value_ptr;
+    }
 };
 
 pub const BBox = struct {
@@ -83,7 +81,7 @@ pub const BBox = struct {
     }
 };
 
-pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !RenderedGlyph {
+pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !Canvas {
     var bbox = BBox{
         .min_x = glyph.header.x_min,
         .max_x = glyph.header.x_max,
@@ -115,7 +113,40 @@ pub fn renderSize(glyph: Glyph, alloc: Allocator, ttf: Ttf, ext: RenderExtra) !R
         },
     }
 
-    return .{ canvas, bbox };
+    return canvas;
+}
+
+pub fn renderSimpleSize(glyph: Glyf.Simple, bbox: BBox, canvas: *Canvas, ext: RenderExtra) !void {
+    var curves: std.BoundedArray(Glyph.Segment.Segment, 100) = .{};
+    var iter = Glyph.Segment.Iterator.init(glyph);
+    while (iter.next()) |item| {
+        try curves.append(item);
+    }
+
+    var y = bbox.min_y;
+    while (y < bbox.max_y) : (y += 1) {
+        const row_curve_points = try Segment.findRowCurvePoints(curves.slice(), y);
+
+        var winding_count: i64 = 0;
+        var start: i64 = 0;
+        for (row_curve_points.slice()) |point| {
+            if (point.entering == false) {
+                winding_count -= 1;
+            } else {
+                winding_count += 1;
+                if (winding_count == 1) {
+                    start = point.x_pos;
+                }
+            }
+            // NOTE: Always see true first due to sorting
+            if (winding_count == 0) {
+                const not_y: i64 = y - @as(isize, @intCast(bbox.min_y)) + ext.y_offset;
+                const left = @min(start, point.x_pos) + ext.x_offset;
+                const right = @max(start, point.x_pos) + ext.x_offset;
+                canvas.draw(not_y, left - bbox.min_x, right - bbox.min_x);
+            }
+        }
+    }
 }
 
 pub fn debugGlyph(rendered: Canvas) void {
@@ -156,12 +187,7 @@ test "renderSize" {
     if (false) std.debug.print("lap {}\n", .{lap});
 }
 
-pub const RenderedGlyph = struct {
-    Canvas,
-    BBox,
-};
-
-pub fn render(glyph: Glyph, alloc: Allocator, ttf: Ttf) !RenderedGlyph {
+pub fn render(glyph: Glyph, alloc: Allocator, ttf: Ttf) !Canvas {
     return try glyph.renderSize(alloc, ttf, .{ .size = 1.0, .u_per_em = 1.0 });
 }
 
@@ -207,37 +233,6 @@ fn fixEndianness(val: anytype) @TypeOf(val) {
         inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
     }
 }
-
-pub const Cache = struct {
-    map: std.AutoHashMapUnmanaged(u8, RenderedGlyph) = .{},
-    size: f32,
-
-    pub fn init(size: f32) Cache {
-        return .{
-            .size = size,
-        };
-    }
-
-    pub fn raze(c: *Cache, a: Allocator) void {
-        var kitr = c.map.keyIterator();
-        while (kitr.next()) |key| {
-            _ = c.map.fetchRemove(key.*);
-            // TODO clean up glyph canvas
-        }
-        c.map.deinit(a);
-    }
-
-    pub fn get(c: *Cache, a: Allocator, ttf: Ttf, char: u8) !*const RenderedGlyph {
-        const gop = try c.map.getOrPut(a, char);
-        errdefer _ = c.map.remove(char);
-        if (!gop.found_existing) {
-            const g = try ttf.glyphForChar(a, char);
-            const rendered = try g.renderSize(a, ttf, .{ .size = c.size, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
-            gop.value_ptr.* = rendered;
-        }
-        return gop.value_ptr;
-    }
-};
 
 //fn pixelBoundsForGlyph(scale: f32, header: Glyph.Header) [2]u16 {
 //    const width_f: f32 = @floatFromInt(header.x_max - header.x_min);

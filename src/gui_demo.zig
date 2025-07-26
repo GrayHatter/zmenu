@@ -105,7 +105,7 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf)
     for (tl.glyphs) |g| {
         const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
 
-        const canvas, _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = ttf.head.units_per_em });
+        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = ttf.head.units_per_em });
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(400 + g.pixel_x1),
             @intCast(100 - g.pixel_y1),
@@ -131,7 +131,7 @@ fn drawText2(alloc: Allocator, buffer: *const Buffer, ttf: Ttf) !void {
     for (tl.glyphs) |g| {
         const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
 
-        const canvas, _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(200 + g.pixel_x1),
             @intCast(300 - g.pixel_y1),
@@ -157,7 +157,7 @@ fn drawText3(alloc: Allocator, buffer: *const Buffer, ttf: Ttf) !void {
     for (tl.glyphs) |g| {
         const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
 
-        const canvas, _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
+        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
         buffer.drawFont(Buffer.ARGB, .black, .xywh(
             @intCast(100 + g.pixel_x1),
             @intCast(700 - g.pixel_y1),

@@ -663,7 +663,7 @@ fn drawText(
     };
 
     for (tl.glyphs) |g| {
-        const canvas, _ = (try cache.get(alloc, ttf, g.char)).*;
+        const canvas = try cache.get(alloc, ttf, g.char);
         buffer.drawFont(Buffer.ARGB, color, .xywh(
             @intCast(@as(i32, @intCast(box.x)) + g.pixel_x1),
             @intCast(@as(i32, @intCast(box.y)) - g.pixel_y1),
