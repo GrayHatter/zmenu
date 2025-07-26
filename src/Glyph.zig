@@ -53,17 +53,17 @@ pub const RenderExtra = struct {
 };
 
 pub const BBox = struct {
+    min_x: i16,
+    max_x: i16,
+    min_y: i16,
+    max_y: i16,
+
     const invalid = BBox{
         .min_x = std.math.maxInt(i16),
         .max_x = std.math.minInt(i16),
         .min_y = std.math.maxInt(i16),
         .max_y = std.math.minInt(i16),
     };
-
-    min_x: i16,
-    max_x: i16,
-    min_y: i16,
-    max_y: i16,
 
     pub fn width(self: BBox) usize {
         return @intCast(self.max_x - self.min_x);
