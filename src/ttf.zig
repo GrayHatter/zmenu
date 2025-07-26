@@ -169,7 +169,7 @@ pub const Scale = struct {
     }
 };
 
-test "render all chars" {
+test "render chars timed" {
     const config = @import("config");
 
     const debug_print_timing = config.timings;
@@ -215,6 +215,29 @@ test "render all chars" {
         _ = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
     }
     if (debug_print_timing) std.debug.print("after render size {d: >8}\n", .{timer.lap()});
+}
+
+test "render most chars" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const embed = @embedFile("font.ttf");
+    const font: []align(2) u8 = try alloc.alignedAlloc(u8, 2, embed.len);
+    @memcpy(font, embed);
+    defer alloc.free(font);
+    const ttf = try Ttf.init(font);
+
+    for (0x21..0x7f) |char| {
+        const glyph = ttf.glyphForChar(alloc, @intCast(char)) catch |err| switch (err) {
+            error.EmptyGlyph => {
+                std.debug.print("Error: can't render {c} {}\n", .{ @as(u8, @intCast(char)), char });
+                return err;
+            },
+            else => return err,
+        };
+        _ = try glyph.render(alloc, ttf);
+    }
 }
 
 test {
