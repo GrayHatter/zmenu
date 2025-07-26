@@ -38,15 +38,8 @@ pub fn main() !void {
 
     zmenu = try .init();
 
+    // Primary size
     const box: Buffer.Box = .wh(600, 300);
-    try zmenu.connect();
-    try zmenu.charcoal.wayland.resize(box);
-    defer zmenu.raze();
-
-    const shm = zmenu.charcoal.wayland.shm orelse return error.NoWlShm;
-    var buffer: Buffer = try .initCapacity(shm, .wh(600, 800), .wh(600, 2000), "zmenu-buffer1");
-    defer buffer.raze();
-
     var root: Ui.Component = .{
         .vtable = .auto(UiRoot),
         .box = box,
@@ -55,14 +48,21 @@ pub fn main() !void {
     try zmenu.charcoal.ui.init(&root, alloc, box);
     defer zmenu.charcoal.ui.raze(alloc);
 
-    root.background(&buffer, box);
-    const surface = zmenu.charcoal.wayland.surface orelse return error.NoSurface;
-    surface.attach(buffer.buffer, 0, 0);
-    surface.commit();
-    try zmenu.charcoal.wayland.roundtrip();
+    // init wayland stuffs
+    try zmenu.connect();
+    defer zmenu.raze();
 
-    try buffer.resize(.wh(600, 300));
+    // Resize here first to trick wl into the position we want
+    var buffer: Buffer = try zmenu.charcoal.createBufferCapacity(box.add(.wh(0, 300)), .wh(600, 2000));
+    defer buffer.raze();
+    // technically this isn't required because the size of the buffer is used,
+    // but it doesn't hurt to be safe. I'm sure someone would have broken this
+    // eventually.
+    try zmenu.charcoal.wayland.resize(box.add(.wh(0, 300)));
+    try zmenu.charcoal.wayland.attach(buffer);
     try zmenu.charcoal.wayland.roundtrip();
+    // the real size we want
+    try buffer.resize(box);
 
     const home_dir: std.fs.Dir = h: {
         for (std.os.environ) |envZ| {
@@ -117,11 +117,6 @@ pub fn main() !void {
         std.debug.print("error loading history {}\n", .{err});
         break :b &.{};
     };
-
-    _ = root.draw(&buffer, box);
-    surface.attach(buffer.buffer, 0, 0);
-    surface.damageBuffer(0, 0, @intCast(box.w), @intCast(box.h));
-    surface.commit();
 
     zmenu.charcoal.ui.active_buffer = &buffer;
     try zmenu.charcoal.run();
@@ -358,11 +353,11 @@ const UiCommandBox = struct {
         box = .xywh(35, 30, 600 - 35 * 2, 40);
         buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 10, .ash_gray);
         buffer.drawRectangleRounded(Buffer.ARGB, box, 10, .hookers_green);
-        box.add(.scale(1));
+        box.merge(.vector(1));
         buffer.drawRectangleRounded(Buffer.ARGB, box, 9, .hookers_green);
-        box.add(.scale(1));
+        box.merge(.vector(1));
         buffer.drawRectangleRounded(Buffer.ARGB, box, 8, .hookers_green);
-        box.add(.scale(1));
+        box.merge(.vector(1));
         buffer.drawRectangleRounded(Buffer.ARGB, box, 7, .hookers_green);
 
         if (textbox.key_buffer.items.len > 0) {
