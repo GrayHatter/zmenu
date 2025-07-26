@@ -191,63 +191,6 @@ pub fn render(glyph: Glyph, alloc: Allocator, ttf: Ttf) !Canvas {
     return try glyph.renderSize(alloc, ttf, .{ .size = 1.0, .u_per_em = 1.0 });
 }
 
-const RuntimeParser = struct {
-    data: []const u8,
-    idx: usize = 0,
-
-    pub fn readVal(self: *RuntimeParser, comptime T: type) T {
-        const size = @bitSizeOf(T) / 8;
-        defer self.idx += size;
-        return fixEndianness(std.mem.bytesToValue(T, self.data[self.idx .. self.idx + size]));
-    }
-
-    pub fn readArray(self: *RuntimeParser, comptime T: type, alloc: Allocator, len: usize) ![]T {
-        const size = @bitSizeOf(T) / 8 * len;
-        defer self.idx += size;
-        return fixSliceEndianness(T, alloc, std.mem.bytesAsSlice(T, self.data[self.idx .. self.idx + size]));
-    }
-};
-
-fn fixSliceEndianness(comptime T: type, alloc: Allocator, slice: []align(1) const T) ![]T {
-    const duped = try alloc.alloc(T, slice.len);
-    for (0..slice.len) |i| {
-        duped[i] = fixEndianness(slice[i]);
-    }
-    return duped;
-}
-
-fn fixEndianness(val: anytype) @TypeOf(val) {
-    if (builtin.cpu.arch.endian() == .big) {
-        return val;
-    }
-
-    switch (@typeInfo(@TypeOf(val))) {
-        .@"struct" => {
-            var ret = val;
-            std.mem.byteSwapAllFields(@TypeOf(val), &ret);
-            return ret;
-        },
-        .int => {
-            return std.mem.bigToNative(@TypeOf(val), val);
-        },
-        inline else => @compileError("Cannot fix endianness for " ++ @typeName(@TypeOf(val))),
-    }
-}
-
-//fn pixelBoundsForGlyph(scale: f32, header: Glyph.Header) [2]u16 {
-//    const width_f: f32 = @floatFromInt(header.x_max - header.x_min);
-//    const height_f: f32 = @floatFromInt(header.y_max - header.y_min);
-//
-//    return .{
-//        @intFromFloat(@round(width_f * scale)),
-//        @intFromFloat(@round(height_f * scale)),
-//    };
-//}
-//pub fn pixelFromFunit(scale: f32, funit: i64) i32 {
-//    const size_f: f32 = @floatFromInt(funit);
-//    return @intFromFloat(@round(scale * size_f));
-//}
-
 test "glyph main" {
     _ = std.testing.refAllDecls(@This());
     _ = &Canvas;
