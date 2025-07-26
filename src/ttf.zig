@@ -154,19 +154,6 @@ pub const FunitToPixelConverter = struct {
     }
 };
 
-fn pointsBounds(points: []const Glyph2.FPoint) Glyph2.BBox {
-    var ret = Glyph2.BBox.invalid;
-
-    for (points) |point| {
-        ret.min_x = @min(point[0], ret.min_x);
-        ret.min_y = @min(point[1], ret.min_x);
-        ret.max_x = @max(point[0], ret.max_x);
-        ret.max_y = @max(point[1], ret.max_x);
-    }
-
-    return ret;
-}
-
 pub const Scale = struct {
     scale: f32,
 
