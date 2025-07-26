@@ -64,7 +64,7 @@ pub fn init(font_data: []align(2) u8) !Ttf {
         switch (tag) {
             .head => head = .fromBytes(tableFromEntry(font_data, entry)),
             .hhea => hhea = .fromBytes(tableFromEntry(font_data, entry)),
-            .loca => loca = .init(@intCast(head.?.index_to_loc_format), tableFromEntry(font_data, entry)),
+            .loca => loca = .init(head.?.index_to_loc_format, tableFromEntry(font_data, entry)),
             .maxp => maxp = .fromBytes(tableFromEntry(font_data, entry)),
             .cmap => cmap = .init(tableFromEntry(font_data, entry)),
             .glyf => glyf = .init(tableFromEntry(font_data, entry)),

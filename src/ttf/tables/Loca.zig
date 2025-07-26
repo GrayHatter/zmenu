@@ -7,7 +7,7 @@ pub const Slice = union(enum) {
     u32: []const u32,
 };
 
-pub fn init(format: u8, data: []align(2) u8) Loca {
+pub fn init(format: i16, data: []align(2) u8) Loca {
     return .{ .slice = switch (format) {
         0 => .{ .u16 = @alignCast(@ptrCast(data)) },
         1 => .{ .u32 = @alignCast(@ptrCast(data)) },
