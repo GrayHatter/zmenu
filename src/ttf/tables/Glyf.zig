@@ -24,13 +24,18 @@ pub const Simple = struct {
     end_pts_of_contours: []u16,
     instruction_length: u16,
     //instructions: []u8,
-    flags: []Flags,
-    x_coordinates: []i16,
-    y_coordinates: []i16,
+    contours: []Contour,
+    num_contours: usize,
 
     fl_ptr: []const u8,
     xc_ptr: []const u8,
     yc_ptr: []const u8,
+
+    pub const Contour = struct {
+        flag: Flags,
+        x_coord: i16,
+        y_coord: i16,
+    };
 
     pub const Flags = packed struct(u8) {
         on_curve_point: bool,
@@ -75,6 +80,85 @@ pub const Simple = struct {
         }
     };
 
+    pub fn getFlag(s: Simple, index: usize) Simple.Flags {
+        const real = s.contours[index].flag;
+        var pos: usize = 0;
+        var idx: usize = 0;
+        var flag: Simple.Flags = @bitCast(s.fl_ptr[pos]);
+        while (idx <= index) {
+            flag = @bitCast(s.fl_ptr[pos]);
+            if (idx == index) break;
+            idx +|= 1;
+            pos += 1;
+            if (flag.repeat_flag) {
+                const repeat = s.fl_ptr[pos];
+                pos += 1;
+                if (idx + repeat <= index) {
+                    idx += repeat;
+                } else {
+                    break;
+                }
+            }
+        }
+        std.debug.assert(real == flag);
+        return flag;
+    }
+
+    pub fn getX(s: Simple, index: usize) i16 {
+        const real = s.contours[index].x_coord;
+        var idx: usize = 0;
+        var flag: Simple.Flags = @bitCast(s.fl_ptr[0]);
+        var x_offset: usize = 0;
+        while (idx <= index) {
+            flag = s.getFlag(idx); //@bitCast(s.fl_ptr[pos]);
+            if (idx == index) break;
+            idx +|= 1;
+            const f_offset = switch (flag.variant(.x)) {
+                .short_neg, .short_pos => 1,
+                .long => 2,
+                .repeat => @as(usize, 0),
+            };
+            x_offset += f_offset;
+        }
+
+        const searched: i16 = switch (flag.variant(.x)) {
+            .short_pos => s.xc_ptr[x_offset],
+            .short_neg => -@as(i16, s.xc_ptr[x_offset]),
+            .long => byteSwap(@as(*align(1) const i16, @alignCast(@ptrCast(s.xc_ptr[x_offset..].ptr))).*),
+            .repeat => @as(i16, 0),
+        };
+
+        std.debug.assert(searched == real);
+        return searched;
+    }
+
+    pub fn getY(s: Simple, index: usize) i16 {
+        const real = s.contours[index].y_coord;
+        var idx: usize = 0;
+        var flag: Simple.Flags = s.getFlag(0);
+        var y_offset: usize = 0;
+        while (idx <= index) {
+            flag = s.getFlag(idx);
+            if (idx == index) break;
+            idx +|= 1;
+            const f_offset = switch (flag.variant(.y)) {
+                .short_neg, .short_pos => 1,
+                .long => 2,
+                .repeat => @as(usize, 0),
+            };
+            y_offset += f_offset;
+        }
+
+        const searched: i16 = switch (flag.variant(.y)) {
+            .short_pos => s.yc_ptr[y_offset],
+            .short_neg => -@as(i16, s.yc_ptr[y_offset]),
+            .long => byteSwap(@as(*align(1) const i16, @alignCast(@ptrCast(s.yc_ptr[y_offset..].ptr))).*),
+            .repeat => @as(i16, 0),
+        };
+        std.debug.assert(searched == real);
+        return searched;
+    }
+
     pub fn init(alloc: Allocator, data: []const u8) !Simple {
         var runtime_parser = RuntimeParser{ .data = data };
         const common = runtime_parser.readVal(Header);
@@ -85,53 +169,65 @@ pub const Simple = struct {
         for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
         const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
 
-        const flags = try alloc.alloc(Simple.Flags, num_contours);
-        const x_coords = try alloc.alloc(i16, num_contours);
-        const y_coords = try alloc.alloc(i16, num_contours);
+        //std.debug.print("number of contors {}\n", .{common.number_of_contours});
+        //std.debug.print("end pt of contors {any}\n", .{end_pts_of_contours});
+        //std.debug.print("real number of contors {}\n", .{num_contours});
 
+        const contours = try alloc.alloc(Contour, num_contours);
         const fl_ptr: []const u8 = data[runtime_parser.idx..];
         var i: usize = 0;
-        while (i < num_contours) {
-            defer i += 1;
+        while (i < num_contours) : (i += 1) {
             const flag: Simple.Flags = @bitCast(runtime_parser.readVal(u8));
             std.debug.assert(flag.reserved == false);
-
-            flags[i] = flag;
+            contours[i].flag = flag;
 
             if (flag.repeat_flag) {
                 const num_repetitions = runtime_parser.readVal(u8);
-                @memset(flags[i + 1 .. i + 1 + num_repetitions], flag);
+                for (0..num_repetitions) |rep| {
+                    contours[i + 1 + rep].flag = flag;
+                }
                 i += num_repetitions;
             }
         }
 
+        //var simple: Simple = undefined;
+        //simple.fl_ptr = fl_ptr;
+        //const xc_ptr: []const u8 = data[runtime_parser.idx..];
+        //var y_off: usize = 0;
+        //for (0..num_contours) |fi| {
+        //    y_off += switch (simple.getFlag(fi).variant(.x)) {
+        //        .short_pos, .short_neg => 1,
+        //        .long => 2,
+        //        .repeat => 0,
+        //    };
+        //}
+        //const yc_ptr: []const u8 = data[runtime_parser.idx + y_off ..];
+
         const xc_ptr: []const u8 = data[runtime_parser.idx..];
-        for (flags, x_coords) |flag, *xc| {
-            switch (flag.variant(.x)) {
-                .short_pos => xc.* = runtime_parser.readVal(u8),
-                .short_neg => xc.* = -@as(i16, runtime_parser.readVal(u8)),
-                .long => xc.* = runtime_parser.readVal(i16),
-                .repeat => xc.* = 0,
-            }
+        for (contours) |*cont| {
+            cont.x_coord = switch (cont.flag.variant(.x)) {
+                .short_pos => runtime_parser.readVal(u8),
+                .short_neg => -@as(i16, runtime_parser.readVal(u8)),
+                .long => runtime_parser.readVal(i16),
+                .repeat => 0,
+            };
         }
 
         const yc_ptr: []const u8 = data[runtime_parser.idx..];
-        for (flags, y_coords) |flag, *yc| {
-            switch (flag.variant(.y)) {
-                .short_pos => yc.* = runtime_parser.readVal(u8),
-                .short_neg => yc.* = -@as(i16, runtime_parser.readVal(u8)),
-                .long => yc.* = runtime_parser.readVal(i16),
-                .repeat => yc.* = 0,
-            }
+        for (contours) |*cont| {
+            cont.y_coord = switch (cont.flag.variant(.y)) {
+                .short_pos => runtime_parser.readVal(u8),
+                .short_neg => -@as(i16, runtime_parser.readVal(u8)),
+                .long => runtime_parser.readVal(i16),
+                .repeat => 0,
+            };
         }
 
         return .{
             .end_pts_of_contours = end_pts_of_contours,
             .instruction_length = instruction_length,
-            //.instructions = instructions,
-            .flags = flags,
-            .x_coordinates = x_coords,
-            .y_coordinates = y_coords,
+            .contours = contours,
+            .num_contours = num_contours,
 
             .fl_ptr = fl_ptr,
             .xc_ptr = xc_ptr,

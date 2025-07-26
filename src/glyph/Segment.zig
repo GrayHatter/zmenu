@@ -17,12 +17,11 @@ pub const Segment = union(enum) {
 
 pub const Iterator = struct {
     glyph: Glyf.Simple,
-    x_acc: i16 = 0,
-    y_acc: i16 = 0,
 
     idx: usize = 0,
     contour_idx: usize = 0,
-    last_contour_last_point: FPoint = .{ 0, 0 },
+    pos_acc: FPoint = .{ 0, 0 },
+    prev_contour_end: FPoint = .{ 0, 0 },
 
     pub fn init(glyph: Glyf.Simple) Iterator {
         return .{
@@ -32,34 +31,52 @@ pub const Iterator = struct {
 
     pub fn next(self: *Iterator) ?Segment {
         while (true) {
-            if (self.idx >= self.glyph.x_coordinates.len) return null;
+            if (self.idx >= self.glyph.num_contours) return null;
             defer self.idx += 1;
 
-            const a = self.getPoint(self.idx);
+            const a = self.getPoint(self.idx, self.pos_acc);
 
-            defer self.x_acc = a.pos[0];
-            defer self.y_acc = a.pos[1];
+            defer self.pos_acc = a.pos;
 
-            const b = self.getPoint(self.idx + 1);
-            const c = self.getPoint(self.idx + 2);
+            const b = self.getPoint(self.idx + 1, self.pos_acc);
+            const c = self.getPoint(self.idx + 2, self.pos_acc);
 
             const ret = abcToCurve(a, b, c, self.contour_idx);
             if (self.glyph.end_pts_of_contours[self.contour_idx] == self.idx) {
                 self.contour_idx += 1;
-                self.last_contour_last_point = a.pos;
+                self.prev_contour_end = a.pos;
             }
 
-            if (ret) |val| {
-                return val;
-            }
+            return ret orelse continue;
         }
     }
-    fn contourStart(self: Iterator) usize {
-        if (self.contour_idx == 0) {
-            return 0;
-        } else {
-            return self.glyph.end_pts_of_contours[self.contour_idx - 1] + 1;
+
+    fn abcToCurve(a: Point, b: Point, c: Point, contour_idx: usize) ?Segment {
+        if (a.on_curve and b.on_curve) {
+            return .{ .line = .{
+                .a = a.pos,
+                .b = b.pos,
+                .contour_id = contour_idx,
+            } };
+        } else if (b.on_curve) {
+            return null;
         }
+
+        std.debug.assert(!b.on_curve);
+
+        const a_on = if (a.on_curve) a.pos else (a.pos + b.pos) / FPoint{ 2, 2 };
+        const c_on = if (c.on_curve) c.pos else (c.pos + b.pos) / FPoint{ 2, 2 };
+
+        return .{ .bezier = .{
+            .a = a_on,
+            .b = b.pos,
+            .c = c_on,
+            .contour_id = contour_idx,
+        } };
+    }
+
+    fn contourStart(self: Iterator) usize {
+        return if (self.contour_idx > 0) self.glyph.end_pts_of_contours[self.contour_idx - 1] + 1 else 0;
     }
 
     fn wrappedContourIdx(self: Iterator, idx: usize) usize {
@@ -69,29 +86,24 @@ pub const Iterator = struct {
         return (idx - contour_start) % contour_len + contour_start;
     }
 
-    fn getPoint(self: *Iterator, idx: usize) Point {
-        var x_acc = self.x_acc;
-        var y_acc = self.y_acc;
+    fn getPoint(self: Iterator, idx: usize, pos: FPoint) Point {
+        var x_acc = pos[0];
+        var y_acc = pos[1];
 
         for (self.idx..idx + 1) |i| {
             const wrapped_i = self.wrappedContourIdx(i);
             if (wrapped_i == self.contourStart()) {
-                x_acc = self.last_contour_last_point[0];
-                y_acc = self.last_contour_last_point[1];
+                x_acc = self.prev_contour_end[0];
+                y_acc = self.prev_contour_end[1];
             }
-            x_acc += self.glyph.x_coordinates[wrapped_i];
-            y_acc += self.glyph.y_coordinates[wrapped_i];
+            x_acc += self.glyph.getX(wrapped_i);
+            y_acc += self.glyph.getY(wrapped_i);
         }
 
-        const pos = FPoint{
-            x_acc,
-            y_acc,
-        };
-
-        const on_curve = self.glyph.flags[self.wrappedContourIdx(idx)].on_curve_point;
+        const on_curve = self.glyph.getFlag(self.wrappedContourIdx(idx)).on_curve_point;
         return .{
             .on_curve = on_curve,
-            .pos = pos,
+            .pos = .{ x_acc, y_acc },
         };
     }
 };
@@ -204,37 +216,6 @@ const Point = struct {
     on_curve: bool,
     pos: FPoint,
 };
-
-fn abcToCurve(a: Point, b: Point, c: Point, contour_idx: usize) ?Segment {
-    if (a.on_curve and b.on_curve) {
-        return .{ .line = .{
-            .a = a.pos,
-            .b = b.pos,
-            .contour_id = contour_idx,
-        } };
-    } else if (b.on_curve) {
-        return null;
-    }
-
-    std.debug.assert(!b.on_curve);
-
-    const a_on = resolvePoint(a, b);
-    const c_on = resolvePoint(c, b);
-
-    return .{ .bezier = .{
-        .a = a_on,
-        .b = b.pos,
-        .c = c_on,
-        .contour_id = contour_idx,
-    } };
-}
-
-fn resolvePoint(maybe_off: Point, off: Point) FPoint {
-    if (maybe_off.on_curve) return maybe_off.pos;
-    std.debug.assert(off.on_curve == false);
-
-    return (maybe_off.pos + off.pos) / FPoint{ 2, 2 };
-}
 
 pub const RowCurvePoint = struct {
     x_pos: i64,
