@@ -38,11 +38,19 @@ pub fn main() !void {
     defer alloc.free(font);
     const ttf = try Ttf.load(@alignCast(font));
 
+    const small_font = false;
     glyph_cache = .init(&ttf, 0.01866);
+    if (small_font) {
+        glyph_cache.scale_vert = 0.0195;
+        glyph_cache.scale_horz = 0.025;
+    }
     defer glyph_cache.raze(alloc);
 
     try drawText2(alloc, &buffer);
+
     try drawText3(alloc, &buffer);
+
+    try drawText4(alloc, &buffer);
 
     colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
     colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
@@ -70,10 +78,10 @@ pub fn main() !void {
     buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 110, 200, 50), .alpha(.blue, 0xc8));
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 100, 100, 50), @enumFromInt(0xffff00ff));
 
-    buffer.drawRectangleFill(Buffer.ARGB, .xywh(130, 810, 200, 50), .blue);
-    buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 800, 200, 50), .red);
-    buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 810, 200, 50), .alpha(.blue, 0x88));
-    buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 800, 100, 50), .hex(0xffff00ff));
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(130, 410, 200, 50), .blue);
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 300, 200, 50), .red);
+    buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 410, 200, 50), .alpha(.blue, 0x88));
+    buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 400, 100, 50), .hex(0xffff00ff));
 
     var i: usize = 0;
     while (char.wayland.connected) {
@@ -138,6 +146,59 @@ fn drawText3(alloc: Allocator, buffer: *const Buffer) !void {
         next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
 }
+
+fn drawText4(alloc: Allocator, buffer: *const Buffer) !void {
+    var next_x: i32 = 0;
+    var per_char: f16 = 0xff;
+    const per_char_delta: f16 = 255.0 / (0x7f.0 - 0x21.0);
+    for (0x21..0x7f) |g| {
+        const glyph = try glyph_cache.get(alloc, @intCast(g));
+        buffer.drawFont(ARGB, .black, .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(850)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        buffer.drawFont(ARGB, .dark_gray, .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(875)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        buffer.drawFont(ARGB, .gray, .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(900)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        buffer.drawFont(ARGB, .light_gray, .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(925)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        buffer.drawFont(ARGB, .white, .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(950)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        buffer.drawFont(ARGB, .rgb(
+            @intFromFloat(@round(per_char)),
+            @intFromFloat(@round(per_char)),
+            @intFromFloat(@round(per_char)),
+        ), .xywh(
+            @intCast(@as(i32, @intCast(10)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(975)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        std.debug.print("{}\n", .{per_char});
+        per_char -= per_char_delta;
+        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
+    }
+}
+
 fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
     for (0..size) |x| for (0..size) |y| {
         const r_x: usize = @intCast(x * 0xff / size);
