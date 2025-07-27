@@ -31,7 +31,7 @@ pub const Iterator = struct {
 
     pub fn next(self: *Iterator) ?Segment {
         while (true) {
-            if (self.idx >= self.glyph.num_contours) return null;
+            if (self.idx >= self.glyph.num_points) return null;
             defer self.idx += 1;
 
             const a = self.getPoint(self.idx, self.pos_acc);
@@ -41,13 +41,12 @@ pub const Iterator = struct {
             const b = self.getPoint(self.idx + 1, self.pos_acc);
             const c = self.getPoint(self.idx + 2, self.pos_acc);
 
-            const ret = abcToCurve(a, b, c, self.contour_idx);
             if (self.glyph.end_pts_of_contours[self.contour_idx] == self.idx) {
                 self.contour_idx += 1;
                 self.prev_contour_end = a.pos;
             }
 
-            return ret orelse continue;
+            return abcToCurve(a, b, c, self.contour_idx) orelse continue;
         }
     }
 
@@ -87,23 +86,24 @@ pub const Iterator = struct {
     }
 
     fn getPoint(self: Iterator, idx: usize, pos: FPoint) Point {
-        var x_acc = pos[0];
-        var y_acc = pos[1];
+        var acc: FPoint = pos;
+        //var y_acc = pos[1];
 
         for (self.idx..idx + 1) |i| {
             const wrapped_i = self.wrappedContourIdx(i);
             if (wrapped_i == self.contourStart()) {
-                x_acc = self.prev_contour_end[0];
-                y_acc = self.prev_contour_end[1];
+                acc = self.prev_contour_end;
+                //y_acc = self.prev_contour_end[1];
             }
-            x_acc += self.glyph.getX(wrapped_i);
-            y_acc += self.glyph.getY(wrapped_i);
+            acc += .{ self.glyph.getX(wrapped_i), self.glyph.getY(wrapped_i) };
+            //y_acc += self.glyph.getY(wrapped_i);
         }
 
         const on_curve = self.glyph.getFlag(self.wrappedContourIdx(idx)).on_curve_point;
         return .{
             .on_curve = on_curve,
-            .pos = .{ x_acc, y_acc },
+            //.pos = .{ x_acc, y_acc },
+            .pos = acc,
         };
     }
 };

@@ -25,7 +25,7 @@ pub const Simple = struct {
     instruction_length: u16,
     //instructions: []u8,
     contours: []Contour,
-    num_contours: usize,
+    num_points: usize,
 
     fl_ptr: []const u8,
     xc_ptr: []const u8,
@@ -81,7 +81,10 @@ pub const Simple = struct {
     };
 
     pub fn getFlag(s: Simple, index: usize) Simple.Flags {
+
+        //std.debug.print("flag {}\n", .{index});
         const real = s.contours[index].flag;
+        if (true) return s.contours[index].flag;
         var pos: usize = 0;
         var idx: usize = 0;
         var flag: Simple.Flags = @bitCast(s.fl_ptr[pos]);
@@ -93,11 +96,10 @@ pub const Simple = struct {
             if (flag.repeat_flag) {
                 const repeat = s.fl_ptr[pos];
                 pos += 1;
-                if (idx + repeat <= index) {
-                    idx += repeat;
-                } else {
-                    break;
+                if (idx + repeat > index) {
+                    return flag;
                 }
+                idx += repeat;
             }
         }
         std.debug.assert(real == flag);
@@ -167,16 +169,18 @@ pub const Simple = struct {
         const instruction_length = runtime_parser.readVal(u16);
         //const instructions = try runtime_parser.readArray(u8, alloc, instruction_length);
         for (0..instruction_length) |_| _ = runtime_parser.readVal(u8);
-        const num_contours = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
+        const num_points = end_pts_of_contours[end_pts_of_contours.len - 1] + 1;
 
-        //std.debug.print("number of contors {}\n", .{common.number_of_contours});
-        //std.debug.print("end pt of contors {any}\n", .{end_pts_of_contours});
-        //std.debug.print("real number of contors {}\n", .{num_contours});
+        std.debug.print("number of contors {} {any} {} \n", .{
+            common.number_of_contours,
+            end_pts_of_contours,
+            num_points,
+        });
 
-        const contours = try alloc.alloc(Contour, num_contours);
+        const contours = try alloc.alloc(Contour, num_points);
         const fl_ptr: []const u8 = data[runtime_parser.idx..];
         var i: usize = 0;
-        while (i < num_contours) : (i += 1) {
+        while (i < num_points) : (i += 1) {
             const flag: Simple.Flags = @bitCast(runtime_parser.readVal(u8));
             std.debug.assert(flag.reserved == false);
             contours[i].flag = flag;
@@ -227,7 +231,7 @@ pub const Simple = struct {
             .end_pts_of_contours = end_pts_of_contours,
             .instruction_length = instruction_length,
             .contours = contours,
-            .num_contours = num_contours,
+            .num_points = num_points,
 
             .fl_ptr = fl_ptr,
             .xc_ptr = xc_ptr,
