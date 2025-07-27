@@ -36,9 +36,13 @@ pub fn main() !void {
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
-    const ttf = try Ttf.init(@alignCast(font));
-    try drawText2(alloc, &buffer, ttf);
-    try drawText3(alloc, &buffer, ttf);
+    const ttf = try Ttf.load(@alignCast(font));
+
+    glyph_cache = .init(&ttf, 0.01866);
+    defer glyph_cache.raze(alloc);
+
+    try drawText2(alloc, &buffer);
+    try drawText3(alloc, &buffer);
 
     colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
     colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
@@ -89,81 +93,49 @@ pub fn main() !void {
     }
 }
 
-fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8, ttf: Ttf) !void {
-    var layout_helper = LayoutHelper.init(alloc, text, ttf, 512, 14);
-    defer layout_helper.glyphs.deinit();
-    while (try layout_helper.step(ttf)) {}
+var glyph_cache: Ttf.GlyphCache = undefined;
 
-    const tl: LayoutHelper.Text = .{
-        .glyphs = try layout_helper.glyphs.toOwnedSlice(),
-        .min_x = layout_helper.bounds.min_x,
-        .max_x = layout_helper.bounds.max_x,
-        .min_y = layout_helper.bounds.min_y,
-        .max_y = layout_helper.bounds.max_y,
-    };
-
-    for (tl.glyphs) |g| {
-        const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
-
-        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = ttf.head.units_per_em });
-        buffer.drawFont(Buffer.ARGB, .black, .xywh(
-            @intCast(400 + g.pixel_x1),
-            @intCast(100 - g.pixel_y1),
-            @intCast(canvas.width),
-            @intCast(canvas.height),
-        ), canvas.pixels);
+fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8) !void {
+    var next_x: i32 = 0;
+    for (text) |g| {
+        const glyph = try glyph_cache.get(alloc, g);
+        buffer.drawFont(ARGB, .black, .xywh(
+            @intCast(@as(i32, @intCast(400)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(100)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
 }
 
-fn drawText2(alloc: Allocator, buffer: *const Buffer, ttf: Ttf) !void {
-    var layout_helper = LayoutHelper.init(alloc, "abcdefghijklmnopqrstuvwxyz", ttf, 512, 14);
-    defer layout_helper.glyphs.deinit();
-    while (try layout_helper.step(ttf)) {}
-
-    const tl: LayoutHelper.Text = .{
-        .glyphs = try layout_helper.glyphs.toOwnedSlice(),
-        .min_x = layout_helper.bounds.min_x,
-        .max_x = layout_helper.bounds.max_x,
-        .min_y = layout_helper.bounds.min_y,
-        .max_y = layout_helper.bounds.max_y,
-    };
-
-    for (tl.glyphs) |g| {
-        const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
-
-        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
-        buffer.drawFont(Buffer.ARGB, .black, .xywh(
-            @intCast(200 + g.pixel_x1),
-            @intCast(300 - g.pixel_y1),
-            @intCast(canvas.width),
-            @intCast(canvas.height),
-        ), canvas.pixels);
+fn drawText2(alloc: Allocator, buffer: *const Buffer) !void {
+    const text = "abcdefghijklmnopqrstuvwxyz";
+    var next_x: i32 = 0;
+    for (text) |g| {
+        const glyph = try glyph_cache.get(alloc, g);
+        buffer.drawFont(ARGB, .black, .xywh(
+            @intCast(@as(i32, @intCast(200)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(300)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
 }
 
-fn drawText3(alloc: Allocator, buffer: *const Buffer, ttf: Ttf) !void {
-    var layout_helper = LayoutHelper.init(alloc, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", ttf, 512, 14);
-    defer layout_helper.glyphs.deinit();
-    while (try layout_helper.step(ttf)) {}
-
-    const tl: LayoutHelper.Text = .{
-        .glyphs = try layout_helper.glyphs.toOwnedSlice(),
-        .min_x = layout_helper.bounds.min_x,
-        .max_x = layout_helper.bounds.max_x,
-        .min_y = layout_helper.bounds.min_y,
-        .max_y = layout_helper.bounds.max_y,
-    };
-
-    for (tl.glyphs) |g| {
-        const glyph = ttf.glyphForChar(alloc, g.char) catch continue;
-
-        const canvas = try glyph.renderSize(alloc, ttf, .{ .size = 14, .u_per_em = @floatFromInt(ttf.head.units_per_em) });
-        buffer.drawFont(Buffer.ARGB, .black, .xywh(
-            @intCast(100 + g.pixel_x1),
-            @intCast(700 - g.pixel_y1),
-            @intCast(canvas.width),
-            @intCast(canvas.height),
-        ), canvas.pixels);
+fn drawText3(alloc: Allocator, buffer: *const Buffer) !void {
+    const text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    var next_x: i32 = 0;
+    for (text) |g| {
+        const glyph = try glyph_cache.get(alloc, g);
+        buffer.drawFont(ARGB, .black, .xywh(
+            @intCast(@as(i32, @intCast(100)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(700)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
 }
 fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
@@ -181,8 +153,8 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
     };
 }
 
-const LayoutHelper = @import("LayoutHelper.zig");
-const Ttf = @import("ttf.zig");
+const Ttf = charcoal.TrueType;
+const ARGB = charcoal.Buffer.ARGB;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

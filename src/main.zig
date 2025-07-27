@@ -107,10 +107,9 @@ pub fn main() !void {
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
     defer alloc.free(font);
-    const ttf = try Ttf.init(@alignCast(font));
-    ttf_ptr = &ttf;
+    const ttf = try Ttf.load(@alignCast(font));
 
-    glyph_cache = .init(14);
+    glyph_cache = .init(&ttf, 0.01866);
     defer glyph_cache.raze(alloc);
 
     command_history = loadHistory(home_dir, alloc) catch |err| b: {
@@ -130,7 +129,7 @@ pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
-var glyph_cache: Glyph.Cache = undefined;
+var glyph_cache: Ttf.GlyphCache = undefined;
 var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
@@ -250,7 +249,7 @@ const UiRoot = struct {
     };
 
     pub fn background(_: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
-        b.drawRectangleRoundedFill(Buffer.ARGB, box, 25, .alpha(.ash_gray, 0x7c));
+        b.drawRectangleRoundedFill(ARGB, box, 25, .alpha(.ash_gray, 0x7c));
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
@@ -351,14 +350,14 @@ const UiCommandBox = struct {
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
-        buffer.drawRectangleRoundedFill(Buffer.ARGB, box, 10, .ash_gray);
-        buffer.drawRectangleRounded(Buffer.ARGB, box, 10, .hookers_green);
+        buffer.drawRectangleRoundedFill(ARGB, box, 10, .ash_gray);
+        buffer.drawRectangleRounded(ARGB, box, 10, .hookers_green);
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(Buffer.ARGB, box, 9, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 9, .hookers_green);
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(Buffer.ARGB, box, 8, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 8, .hookers_green);
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(Buffer.ARGB, box, 7, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 7, .hookers_green);
 
         if (textbox.key_buffer.items.len > 0) {
             drawText(
@@ -366,7 +365,6 @@ const UiCommandBox = struct {
                 &glyph_cache,
                 buffer,
                 ui_key_buffer.items,
-                ttf_ptr.*,
                 .xywh(45, 55, root.w - 80, root.h - 80),
                 .charcoal,
             ) catch @panic("draw the textbox failed :<");
@@ -399,7 +397,7 @@ const UiCommandBox = struct {
 const UiOptions = struct {
     pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
-        buffer.drawRectangleFill(Buffer.ARGB, history_box, .alpha(.ash_gray, 0x7c));
+        buffer.drawRectangleFill(ARGB, history_box, .alpha(.ash_gray, 0x7c));
 
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
         comp.children[0].draw(buffer, history_box);
@@ -499,7 +497,7 @@ const UiHistoryOptions = struct {
     ) !struct { usize, usize } {
         var fillbox = box;
         fillbox.x -|= 5;
-        buf.drawRectangleFill(Buffer.ARGB, fillbox, .alpha(.ash_gray, 0x7c));
+        buf.drawRectangleFill(ARGB, fillbox, .alpha(.ash_gray, 0x7c));
         var drawn: usize = 0;
         var found: usize = 0;
         for (cmds) |cmd| {
@@ -507,11 +505,18 @@ const UiHistoryOptions = struct {
             if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
                 found += 1;
                 if (drawn > 4) continue;
-                try drawText(a, &glyph_cache, buf, cmd.text, ttf_ptr.*, .xywh(box.x, y, box.w, 25), .charcoal);
+                try drawText(
+                    a,
+                    &glyph_cache,
+                    buf,
+                    cmd.text,
+                    .xywh(box.x, y, box.w, 25),
+                    .charcoal,
+                );
                 drawn += 1;
                 if (drawn == highlighted) {
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
+                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
+                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
                 }
             }
         }
@@ -609,18 +614,18 @@ const UiExecOptions = struct {
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
                 found += 1;
                 if (drawn > allowed) continue;
-                try drawText(a, &glyph_cache, buf, bin, ttf_ptr.*, .xywh(box.x, y, box.w, 25), .dark_slate_gray);
+                try drawText(a, &glyph_cache, buf, bin, .xywh(box.x, y, box.w, 25), .dark_slate_gray);
                 drawn += 1;
                 if (drawn == highlighted) {
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
-                    buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
+                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
+                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
                 }
             }
         }
         if (highlighted > drawn and drawn > 0) {
             const y = box.y + 20 * (drawn - 1);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
-            buf.drawRectangleRounded(Buffer.ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
+            buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
+            buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
         }
         return .{ drawn, found };
     }
@@ -643,33 +648,22 @@ const UiExecOptions = struct {
 
 fn drawText(
     alloc: Allocator,
-    cache: *Glyph.Cache,
+    cache: *Ttf.GlyphCache,
     buffer: *const Buffer,
     text: []const u8,
-    ttf: Ttf,
     box: Buffer.Box,
-    color: Buffer.ARGB,
+    color: ARGB,
 ) !void {
-    var layout_helper = LayoutHelper.init(alloc, text, ttf, @intCast(box.w), 14);
-    defer layout_helper.glyphs.deinit();
-    while (try layout_helper.step(ttf)) {}
-
-    const tl: LayoutHelper.Text = .{
-        .glyphs = try layout_helper.glyphs.toOwnedSlice(),
-        .min_x = layout_helper.bounds.min_x,
-        .max_x = layout_helper.bounds.max_x,
-        .min_y = layout_helper.bounds.min_y,
-        .max_y = layout_helper.bounds.max_y,
-    };
-
-    for (tl.glyphs) |g| {
-        const canvas = try cache.get(alloc, ttf, g.char);
-        buffer.drawFont(Buffer.ARGB, color, .xywh(
-            @intCast(@as(i32, @intCast(box.x)) + g.pixel_x1),
-            @intCast(@as(i32, @intCast(box.y)) - g.pixel_y1),
-            @intCast(canvas.width),
-            @intCast(canvas.height),
-        ), canvas.pixels);
+    var next_x: i32 = 0;
+    for (text) |g| {
+        const glyph = try cache.get(alloc, g);
+        buffer.drawFont(ARGB, color, .xywh(
+            @intCast(@as(i32, @intCast(box.x)) + glyph.off_x + next_x),
+            @intCast(@as(i32, @intCast(box.y)) + glyph.off_y),
+            @intCast(glyph.width),
+            @intCast(glyph.height),
+        ), glyph.pixels);
+        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
 }
 
@@ -680,10 +674,10 @@ fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
         const r: u8 = @intCast(r_x & 0xfe);
         const g: u8 = @intCast(r_y & 0xfe);
         const b: u8 = @intCast(0xff - r);
-        const c = Buffer.ARGB.rgb(r, g, b);
+        const c = ARGB.rgb(r, g, b);
         colors.draw(.xywh(x, y, 1, 1), &[1]u32{c.int()});
         const b2: u8 = 0xff - g;
-        const c2 = Buffer.ARGB.rgb(r, g, b2);
+        const c2 = ARGB.rgb(r, g, b2);
         buffer.draw(.xywh(x, y, 1, 1), &[1]u32{@intFromEnum(c2)});
     };
 }
@@ -695,17 +689,14 @@ fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
         const r: u8 = @intCast(r_x & 0xfe);
         const g: u8 = @intCast(r_y & 0xfe);
         const b: u8 = 0xff - g;
-        const c = Buffer.ARGB.rgb(r, g, b);
-        buf.drawPoint(Buffer.ARGB, .xy(x, y), c);
+        const c = ARGB.rgb(r, g, b);
+        buf.drawPoint(ARGB, .xy(x, y), c);
     };
 }
 
 test {
     _ = &Buffer;
-    _ = &LayoutHelper;
-    _ = &Ttf;
     _ = &ZMenu;
-    _ = &Glyph;
     _ = &Ui;
     _ = &std.testing.refAllDecls(@This());
 }
@@ -713,10 +704,9 @@ test {
 const charcoal = @import("charcoal");
 const Charcoal = charcoal.Charcoal;
 const Buffer = charcoal.Buffer;
-const LayoutHelper = @import("LayoutHelper.zig");
-const Ttf = @import("ttf.zig");
-const Glyph = @import("Glyph.zig");
+const Ttf = charcoal.TrueType;
 const Ui = charcoal.Ui;
+const ARGB = Buffer.ARGB;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
