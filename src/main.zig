@@ -40,11 +40,9 @@ pub fn main() !void {
 
     // Primary size
     const box: Buffer.Box = .wh(600, 300);
-    var root: Ui.Component = .{
-        .vtable = .auto(UiRoot),
-        .box = box,
-        .children = &UiRoot.ui_children,
-    };
+    UiRoot.component.box = box;
+    var root: Ui.Component = UiRoot.component;
+
     try zmenu.charcoal.ui.init(&root, alloc, box);
     defer zmenu.charcoal.ui.raze(alloc);
 
@@ -238,18 +236,29 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
 }
 
 const UiRoot = struct {
-    var ui_options_children = [_]Ui.Component{
-        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
-        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
+    var component: Ui.Component = .{
+        .vtable = .auto(UiRoot),
+        .children = &children,
     };
 
-    var ui_children = [_]Ui.Component{
+    var children = [_]Ui.Component{
         .{ .vtable = .auto(UiCommandBox), .children = &.{} },
-        .{ .vtable = .auto(UiOptions), .children = &ui_options_children },
+        .{ .vtable = .auto(UiOptions), .children = &UiOptions.children },
     };
 
-    pub fn background(_: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
+    pub fn background(comp: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(ARGB, box, 25, .alpha(.ash_gray, 0x7c));
+        for (comp.children) |*c| c.background(b, box);
+    }
+
+    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+        const options_box = box.add(UiOptions.size);
+        const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.x), @intCast(mmove.y)));
+        if (options_box.within(mbox)) {
+            comp.children[1].mMove(mmove.addOffset(-UiOptions.size.x, -UiOptions.size.y), box);
+            comp.redraw_req = comp.children[1].redraw_req or comp.redraw_req;
+        }
+        //for (comp.children) |*c| c.mMove(mmove, box);
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
@@ -395,16 +404,23 @@ const UiCommandBox = struct {
 };
 
 const UiOptions = struct {
+    pub const size: Buffer.Box.Delta = .xywh(45, 70, -70, -95);
+    var children = [_]Ui.Component{
+        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
+        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
+    };
+
     pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
-        const history_box: Buffer.Box = .xywh(45, 70, box.w - 70, box.h - 95);
+        const history_box: Buffer.Box = box.add(size);
         buffer.drawRectangleFill(ARGB, history_box, .alpha(.ash_gray, 0x7c));
 
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
         comp.children[0].draw(buffer, history_box);
 
-        var path_box = history_box;
-        path_box.y += 20 * hist.drawn;
-        path_box.h -= 20 * hist.drawn;
+        const path_box = history_box.add(
+            .xywh(0, @intCast(20 * hist.drawn), 0, -20 * @as(isize, @intCast(hist.drawn))),
+        );
+
         const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
         path.history_count = hist.drawn;
 
@@ -426,6 +442,18 @@ const UiOptions = struct {
         hist.cursor_idx = cursor;
         path.cursor_idx = cursor;
         return true;
+    }
+
+    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
+        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        const cursor_over: usize = ((@as(usize, @intCast(mmove.y)) -| 3) / 20);
+        if (hist.cursor_idx != cursor_over + 1 or path.cursor_idx != cursor_over + 1) {
+            comp.redraw_req = true;
+        }
+        hist.cursor_idx = cursor_over + 1;
+        path.cursor_idx = cursor_over + 1;
+        for (comp.children) |*c| c.mMove(mmove, box);
     }
 };
 
