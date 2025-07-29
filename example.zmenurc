@@ -1,0 +1,11 @@
+# Lines that start with a # are ignored 
+# The following values are the defaults in zmenu
+
+history enabled
+
+# Theme color formats are hex #RGB #RRGGBB or #RRGGBBAA
+background #202020
+text #cdcdcd
+primary #d03e06
+secondary #6d9607
+tertiary #faf4d3

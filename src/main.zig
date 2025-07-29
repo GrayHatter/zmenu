@@ -171,15 +171,27 @@ pub fn main() !void {
     glyph_cache = .init(&ttf, 0.01866);
     defer glyph_cache.raze(alloc);
 
-    command_history = loadHistory(home_dir, alloc) catch |err| b: {
-        std.debug.print("error loading history {}\n", .{err});
-        break :b &.{};
+    user_config = loadRc(home_dir, alloc) catch |err| b: {
+        std.debug.print("error loading rc {}\n", .{err});
+        break :b .{};
     };
+
+    if (user_config.history) {
+        command_history = loadHistory(home_dir, alloc) catch |err| b: {
+            std.debug.print("error loading history {}\n", .{err});
+            break :b &.{};
+        };
+    }
+    if (user_config.theme.background) |bg| theme.bg = @intFromEnum(bg);
+    if (user_config.theme.text) |tx| theme.text = @intFromEnum(tx);
+    if (user_config.theme.primary) |pr| theme.p = @intFromEnum(pr);
+    if (user_config.theme.secondary) |sd| theme.s = @intFromEnum(sd);
+    if (user_config.theme.tertiary) |tr| theme.t = @intFromEnum(tr);
 
     zmenu.charcoal.ui.active_buffer = &buffer;
     try zmenu.charcoal.run();
 
-    if (ui_key_buffer.items.len > 2) {
+    if (ui_key_buffer.items.len > 2 and user_config.history) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
     }
 }
@@ -193,22 +205,76 @@ var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
 var command_history: []Command = undefined;
+var user_config: Config = .{};
 
 pub const Config = struct {
     history: bool = true,
+    theme: struct {
+        background: ?ARGB = null,
+        text: ?ARGB = null,
+        primary: ?ARGB = null,
+        secondary: ?ARGB = null,
+        tertiary: ?ARGB = null,
+    } = .{},
 };
 
-fn loadRc(a: Allocator) !Config {
-    const rc = std.fs.cwd().readFileAlloc(a, ".zmenurc", 0x1ffff) catch |err| switch (err) {
-        error.FileNotFound => return,
+// TODO support other color formats
+fn parseHexColor(str: []const u8) !ARGB {
+    var value = str[mem.indexOfScalar(u8, str, '#') orelse return error.InvalidFormat ..];
+    value = std.mem.trim(u8, value, "# \n\t");
+
+    if (value.len < 6) {
+        if (value.len != 3) return error.InvalidColor;
+
+        return .rgb(
+            std.fmt.parseInt(u8, &[2]u8{ value[0], value[0] }, 16) catch return error.InvalidColor,
+            std.fmt.parseInt(u8, &[2]u8{ value[1], value[1] }, 16) catch return error.InvalidColor,
+            std.fmt.parseInt(u8, &[2]u8{ value[2], value[2] }, 16) catch return error.InvalidColor,
+        );
+    }
+    var color: ARGB = .rgb(
+        std.fmt.parseInt(u8, value[0..2], 16) catch return error.InvalidColor,
+        std.fmt.parseInt(u8, value[2..4], 16) catch return error.InvalidColor,
+        std.fmt.parseInt(u8, value[4..6], 16) catch return error.InvalidColor,
+    );
+    if (value.len >= 8) {
+        color = color.alpha(std.fmt.parseInt(u8, value[6..8], 16) catch return error.InvalidColor);
+    }
+    return color;
+}
+
+fn loadRc(dir: std.fs.Dir, a: Allocator) !Config {
+    const rc = dir.readFileAlloc(a, ".zmenurc", 0x1ffff) catch |err| switch (err) {
+        error.FileNotFound => return .{},
         else => return err,
     };
     defer a.free(rc);
-    // split lines
-    // parse line
-    // return options
+    var cfg: Config = .{};
 
-    return .{};
+    var itr = mem.splitScalar(u8, rc, '\n');
+    while (itr.next()) |lineW| {
+        const line = mem.trim(u8, lineW, " \t\n");
+        if (line.len == 0 or line[0] == '#') continue;
+        if (mem.startsWith(u8, line, "background")) {
+            cfg.theme.background = parseHexColor(line[10..]) catch null;
+        } else if (mem.startsWith(u8, line, "text")) {
+            cfg.theme.text = parseHexColor(line[4..]) catch null;
+        } else if (mem.startsWith(u8, line, "primary")) {
+            cfg.theme.primary = parseHexColor(line[7..]) catch null;
+        } else if (mem.startsWith(u8, line, "secondary")) {
+            cfg.theme.secondary = parseHexColor(line[9..]) catch null;
+        } else if (mem.startsWith(u8, line, "tertiary")) {
+            cfg.theme.tertiary = parseHexColor(line[8..]) catch null;
+        } else if (mem.startsWith(u8, line, "history")) {
+            if (line.len > 8) {
+                const disabled = mem.indexOf(u8, line, " off") orelse mem.indexOf(u8, line, " disable");
+                cfg.history = disabled == null;
+            } else {
+                cfg.history = true;
+            }
+        } else {}
+    }
+    return cfg;
 }
 
 pub const Command = struct {
@@ -228,14 +294,14 @@ fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
     };
     defer a.free(history);
 
-    const count = std.mem.count(u8, history, "\n");
+    const count = mem.count(u8, history, "\n");
     const cmds: []Command = try a.alloc(Command, count);
 
-    var itr = std.mem.splitScalar(u8, history, '\n');
+    var itr = mem.splitScalar(u8, history, '\n');
     for (cmds) |*cmd| {
         const line = itr.next() orelse return error.IteratorFailed;
-        if (std.mem.indexOfScalar(u8, line, ':')) |i| {
-            const text_i = std.mem.indexOfScalarPos(u8, line, i + 1, ':') orelse i;
+        if (mem.indexOfScalar(u8, line, ':')) |i| {
+            const text_i = mem.indexOfScalarPos(u8, line, i + 1, ':') orelse i;
             cmd.* = .{
                 .count = std.fmt.parseInt(usize, line[0..i], 10) catch return error.InvalidHitCount,
                 .text = try a.dupe(u8, line[text_i + 1 ..]),
@@ -821,3 +887,4 @@ const ARGB = Buffer.ARGB;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const mem = std.mem;
