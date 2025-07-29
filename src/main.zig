@@ -32,6 +32,67 @@ var zmenu: ZMenu = .{
     .charcoal = undefined,
 };
 
+pub const Theme = struct {
+    bg: u32,
+    text: u32,
+    p: u32,
+    s: u32,
+    t: u32,
+
+    bg_alpha: u8 = 0xcf,
+
+    pub const Color = enum(u32) {
+        background,
+        text,
+        primary,
+        secondary,
+        tertiary,
+
+        _,
+    };
+
+    pub fn init(T: type, bg: T, text: T, p: T, s: T, t: T) Theme {
+        return .{
+            .bg = @intFromEnum(bg),
+            .text = @intFromEnum(text),
+            .p = @intFromEnum(p),
+            .s = @intFromEnum(s),
+            .t = @intFromEnum(t),
+        };
+    }
+
+    pub fn rgba(th: Theme, T: type, color: Color) T {
+        return switch (color) {
+            .background => .alpha(@enumFromInt(th.bg), th.bg_alpha),
+            .text => .alpha(@enumFromInt(th.text), th.bg_alpha),
+            .primary => .alpha(@enumFromInt(th.p), th.bg_alpha),
+            .secondary => .alpha(@enumFromInt(th.s), th.bg_alpha),
+            .tertiary => .alpha(@enumFromInt(th.t), th.bg_alpha),
+            else => .alpha(@enumFromInt(@intFromEnum(color)), th.bg_alpha),
+        };
+    }
+
+    pub fn rgb(th: Theme, T: type, color: Color) T {
+        return switch (color) {
+            .background => @enumFromInt(th.bg),
+            .text => @enumFromInt(th.text),
+            .primary => @enumFromInt(th.p),
+            .secondary => @enumFromInt(th.s),
+            .tertiary => @enumFromInt(th.t),
+            else => @enumFromInt(@intFromEnum(color)),
+        };
+    }
+};
+
+var theme: Theme = .init(
+    ARGB,
+    .eerie_black,
+    .silver,
+    .sinopia,
+    .cornsilk,
+    .avocado,
+);
+
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     const alloc = gpa.allocator();
@@ -247,7 +308,7 @@ const UiRoot = struct {
     };
 
     pub fn background(comp: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
-        b.drawRectangleRoundedFill(ARGB, box, 25, .alpha(.ash_gray, 0x7c));
+        b.drawRectangleRoundedFill(ARGB, box, 25, theme.rgba(ARGB, .background));
         for (comp.children) |*c| c.background(b, box);
     }
 
@@ -359,14 +420,14 @@ const UiCommandBox = struct {
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
-        buffer.drawRectangleRoundedFill(ARGB, box, 10, .ash_gray);
-        buffer.drawRectangleRounded(ARGB, box, 10, .hookers_green);
+        buffer.drawRectangleRoundedFill(ARGB, box, 10, theme.rgb(ARGB, .background));
+        buffer.drawRectangleRounded(ARGB, box, 10, theme.rgb(ARGB, .primary));
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 9, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 9, theme.rgb(ARGB, .primary));
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 8, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 8, theme.rgb(ARGB, .primary));
         box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 7, .hookers_green);
+        buffer.drawRectangleRounded(ARGB, box, 7, theme.rgb(ARGB, .primary));
 
         if (textbox.key_buffer.items.len > 0) {
             drawText(
@@ -375,7 +436,7 @@ const UiCommandBox = struct {
                 buffer,
                 ui_key_buffer.items,
                 .xywh(45, 55, root.w - 80, root.h - 80),
-                .charcoal,
+                theme.rgb(ARGB, .text),
             ) catch @panic("draw the textbox failed :<");
         }
     }
@@ -404,7 +465,7 @@ const UiCommandBox = struct {
 };
 
 const UiOptions = struct {
-    pub const size: Buffer.Box.Delta = .xywh(45, 70, -70, -95);
+    pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -95);
     var children = [_]Ui.Component{
         .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
         .{ .vtable = .auto(UiExecOptions), .children = &.{} },
@@ -412,14 +473,17 @@ const UiOptions = struct {
 
     pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = box.add(size);
-        buffer.drawRectangleFill(ARGB, history_box, .alpha(.ash_gray, 0x7c));
+        buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
         const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
         comp.children[0].draw(buffer, history_box);
 
-        const path_box = history_box.add(
-            .xywh(0, @intCast(20 * hist.drawn), 0, -20 * @as(isize, @intCast(hist.drawn))),
-        );
+        const path_box = history_box.add(.xywh(
+            0,
+            @intCast(20 * (hist.drawn)),
+            0,
+            -20 * @as(isize, @intCast(hist.drawn)),
+        ));
 
         const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
         path.history_count = hist.drawn;
@@ -523,9 +587,7 @@ const UiHistoryOptions = struct {
         prefix: []const u8,
         box: Buffer.Box,
     ) !struct { usize, usize } {
-        var fillbox = box;
-        fillbox.x -|= 5;
-        buf.drawRectangleFill(ARGB, fillbox, .alpha(.ash_gray, 0x7c));
+        buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
         var drawn: usize = 0;
         var found: usize = 0;
         for (cmds) |cmd| {
@@ -538,13 +600,23 @@ const UiHistoryOptions = struct {
                     &glyph_cache,
                     buf,
                     cmd.text,
-                    .xywh(box.x, y, box.w, 25),
-                    .charcoal,
+                    .xywh(box.x + 5, y, box.w, 25),
+                    theme.rgb(ARGB, .text),
                 );
                 drawn += 1;
                 if (drawn == highlighted) {
-                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
-                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
+                    buf.drawRectangleRounded(
+                        ARGB,
+                        .xywh(box.x, y - 19, box.w, 25),
+                        10,
+                        theme.rgb(ARGB, .primary),
+                    );
+                    buf.drawRectangleRounded(
+                        ARGB,
+                        .xywh(box.x + 1, y - 18, box.w - 2, 25 - 2),
+                        9,
+                        theme.rgb(ARGB, .primary),
+                    );
                 }
             }
         }
@@ -637,23 +709,34 @@ const UiExecOptions = struct {
         if (prefix.len == 0 or bins.len == 0) return .{ 0, 0 };
         var drawn: usize = 0;
         var found: usize = 0;
+
+        var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
         for (bins) |bin| {
-            const y = box.y + 20 + 20 * (drawn);
             if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
                 found += 1;
                 if (drawn > allowed) continue;
-                try drawText(a, &glyph_cache, buf, bin, .xywh(box.x, y, box.w, 25), .dark_slate_gray);
+                try drawText(a, &glyph_cache, buf, bin, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
                 drawn += 1;
                 if (drawn == highlighted) {
-                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y - 19, box.w, 25), 10, .hookers_green);
-                    buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y - 18, box.w - 2, 25 - 2), 9, .hookers_green);
+                    buf.drawRectangleRounded(
+                        ARGB,
+                        hl_box.add(.xywh(0, 1, 0, 0)),
+                        10,
+                        theme.rgb(ARGB, .primary),
+                    );
+                    buf.drawRectangleRounded(
+                        ARGB,
+                        hl_box.add(.xywh(1, 2, -2, -2)),
+                        9,
+                        theme.rgb(ARGB, .primary),
+                    );
                 }
+                hl_box.merge(.xywh(0, 20, 0, 0));
             }
         }
         if (highlighted > drawn and drawn > 0) {
-            const y = box.y + 20 * (drawn - 1);
-            buf.drawRectangleRounded(ARGB, .xywh(box.x - 5, y + 1, box.w, 25), 10, .hookers_green);
-            buf.drawRectangleRounded(ARGB, .xywh(box.x - 4, y + 2, box.w - 2, 25 - 2), 9, .hookers_green);
+            buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(0, 1, 0, 0)), 10, theme.rgb(ARGB, .primary));
+            buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(1, 2, -2, -2)), 9, theme.rgb(ARGB, .primary));
         }
         return .{ drawn, found };
     }
