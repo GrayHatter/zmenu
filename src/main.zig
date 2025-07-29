@@ -160,7 +160,7 @@ pub fn main() !void {
         }
         break :b paths;
     };
-    sys_exes = try .initCapacity(alloc, 4096);
+    sys_exes = try .initCapacity(alloc, 8192);
     var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, paths });
     defer thread.join();
 
