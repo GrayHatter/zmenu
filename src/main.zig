@@ -39,7 +39,7 @@ pub const Theme = struct {
     s: u32,
     t: u32,
 
-    bg_alpha: u8 = 0xcf,
+    bg_alpha: u8 = 0xef,
 
     pub const Color = enum(u32) {
         background,
@@ -201,7 +201,7 @@ pub const std_options: std.Options = .{
 };
 
 var glyph_cache: Ttf.GlyphCache = undefined;
-var sys_exes: std.ArrayListUnmanaged([]const u8) = undefined;
+var sys_exes: std.ArrayListUnmanaged(PathExec) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
 var command_history: []Command = undefined;
@@ -337,8 +337,14 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
     try dir.rename(".zmenu_history.new", ".zmenu_history");
 }
 
+const PathExec = struct {
+    path: []const u8,
+    name: []const u8,
+    arg0: []const u8,
+};
+
 /// Paths must be absolute
-fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []const ?[]const u8) void {
+fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged(PathExec), paths: []const ?[]const u8) void {
     for (paths) |path0| {
         const path = path0 orelse continue;
         var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| switch (err) {
@@ -355,7 +361,17 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged([]const u8), paths: []c
             std.debug.print("Unable to iterate on path '{s}' because {}\n", .{ path, err });
             break;
         }) |file| switch (file.kind) {
-            .file => list.append(a, a.dupe(u8, file.name) catch @panic("OOM")) catch @panic("OOM"),
+            .file => {
+                const full = std.fs.path.join(a, &[2][]const u8{
+                    path,
+                    file.name,
+                }) catch @panic("OOM");
+                list.append(a, .{
+                    .arg0 = full,
+                    .name = full[full.len - file.name.len ..],
+                    .path = path,
+                }) catch @panic("OOM");
+            },
             else => {},
         };
         std.Thread.yield() catch {};
@@ -451,7 +467,12 @@ const UiRoot = struct {
         var argv = cmd;
         var argv_buf: [2048]u8 = undefined;
         if (cmd[0] != '/') {
-            argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
+            for (sys_exes.items) |arg| {
+                if (eql(u8, arg.name, cmd)) {
+                    argv = arg.arg0;
+                    break;
+                }
+            } else argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
         }
 
         std.process.execve(
@@ -768,7 +789,7 @@ const UiExecOptions = struct {
         buf: *const Buffer,
         highlighted: usize,
         allowed: usize,
-        bins: []const []const u8,
+        bins: []const PathExec,
         prefix: []const u8,
         box: Buffer.Box,
     ) !struct { usize, usize } {
@@ -778,10 +799,10 @@ const UiExecOptions = struct {
 
         var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
         for (bins) |bin| {
-            if (prefix.len == 0 or std.mem.startsWith(u8, bin, prefix)) {
+            if (prefix.len == 0 or std.mem.startsWith(u8, bin.name, prefix)) {
                 found += 1;
                 if (drawn > allowed) continue;
-                try drawText(a, &glyph_cache, buf, bin, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
+                try drawText(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
                 drawn += 1;
                 if (drawn == highlighted) {
                     buf.drawRectangleRounded(
@@ -806,16 +827,17 @@ const UiExecOptions = struct {
         }
         return .{ drawn, found };
     }
+
     fn getExec(exc: *UiExecOptions, str: []const u8, hdrawn: usize) ?[]const u8 {
         const cursor = exc.cursor_idx -| hdrawn;
         if (cursor == 0) return null;
         if (cursor > exc.drawn) return null;
         var idx: usize = 0;
         for (sys_exes.items) |exe| {
-            if (std.mem.startsWith(u8, exe, str)) {
+            if (std.mem.startsWith(u8, exe.name, str)) {
                 idx += 1;
                 if (idx == cursor) {
-                    return exe;
+                    return exe.arg0;
                 }
             }
         }
@@ -888,3 +910,4 @@ const ARGB = Buffer.ARGB;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const mem = std.mem;
+const eql = mem.eql;
