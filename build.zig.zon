@@ -6,6 +6,11 @@
     .dependencies = .{
         .charcoal = .{
             .path = "charcoal/",
+            // currently fails on zig master
+            //.url = "git+https://srctree.gr.ht/repo/charcoal#8b9bc4375d766c7daa2d81f1ed6b91d098014456",
+            // works on zig master because mTLS request is disabled on this port
+            //.url = "git+https://srctree.gr.ht:444/repo/charcoal#8b9bc4375d766c7daa2d81f1ed6b91d098014456",
+            //.hash = "charcoal-0.0.0-IfKYkCi6AQAkTxOcbMZy-pRhufL0rA12KzkZq-NTn8t0",
         },
     },
     .paths = .{
