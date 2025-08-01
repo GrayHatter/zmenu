@@ -410,13 +410,14 @@ const UiRoot = struct {
             comp.damaged = child.damaged or comp.damaged;
         }
         if (evt.up) return true;
+
+        const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
+        const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
+        const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
         switch (evt.key) {
             .char => {},
             .ctrl => |ctrl| switch (ctrl) {
                 .enter => {
-                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
-                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
-                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
                     if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
                         const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
                             paths.getExec(textbox.key_buffer.items, history.drawn);
@@ -442,9 +443,6 @@ const UiRoot = struct {
                 },
                 .escape => {
                     comp.damaged = true;
-                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
-                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
-                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
                     if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
                         history.cursor_idx = 0;
                         paths.cursor_idx = 0;
@@ -456,9 +454,6 @@ const UiRoot = struct {
                     return true;
                 },
                 .arrow_left, .arrow_right => {
-                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
-                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
-                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
                     if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
                         const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
                             paths.getExec(textbox.key_buffer.items, history.drawn);
