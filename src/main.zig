@@ -455,6 +455,24 @@ const UiRoot = struct {
                     }
                     return true;
                 },
+                .arrow_left, .arrow_right => {
+                    const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
+                    const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
+                    const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
+                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
+                        const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
+                            paths.getExec(textbox.key_buffer.items, history.drawn);
+                        if (exe_string) |exe| {
+                            textbox.key_buffer.clearRetainingCapacity();
+                            textbox.key_buffer.appendSliceAssumeCapacity(exe);
+                            comp.damaged = true;
+                            comp.redraw_req = true;
+                            history.cursor_idx = 0;
+                            paths.cursor_idx = 0;
+                        }
+                    }
+                    return true;
+                },
                 else => {},
             },
         }
