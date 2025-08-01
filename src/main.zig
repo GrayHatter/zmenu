@@ -424,20 +424,18 @@ const UiRoot = struct {
                             if (std.posix.fork()) |pid| {
                                 if (pid == 0) {
                                     exec(exe) catch {};
-                                } else {
-                                    textbox.key_buffer.clearRetainingCapacity();
-                                    textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                                    zmenu.running = false;
                                 }
+                                textbox.key_buffer.clearRetainingCapacity();
+                                textbox.key_buffer.appendSliceAssumeCapacity(exe);
+                                zmenu.end();
                             } else |_| @panic("everyone knows fork can't fail");
                         }
                     } else if (textbox.key_buffer.items.len > 0) {
                         if (std.posix.fork()) |pid| {
                             if (pid == 0) {
                                 exec(textbox.key_buffer.items) catch {};
-                            } else {
-                                zmenu.running = false;
                             }
+                            zmenu.end();
                         } else |_| @panic("everyone knows fork can't fail");
                     }
                     return true;
@@ -463,18 +461,61 @@ const UiRoot = struct {
         return false;
     }
 
+    const state = enum {
+        start,
+        new_word,
+        word,
+        whitespace,
+    };
+
+    fn tokenize(a: Allocator, path: []const u8, str: []const u8) ![*:null]const ?[*:0]const u8 {
+        var start: usize = 0;
+        var idx: usize = 0;
+        var list: std.ArrayListUnmanaged(?[*:0]const u8) = .{};
+        if (str.len == 0) return &.{};
+        tkn: switch (state.start) {
+            .start => {
+                while (idx < str.len and str[idx] != ' ') idx += 1;
+                try list.append(a, try std.fs.path.joinZ(a, &[2][]const u8{ path, str[start..idx] }));
+                if (idx < str.len) continue :tkn .whitespace;
+                break :tkn;
+            },
+            .new_word => {
+                start = idx;
+                continue :tkn .word;
+            },
+            .word => {
+                while (idx < str.len and str[idx] != ' ') idx += 1;
+                try list.append(a, try a.dupeZ(u8, str[start..idx]));
+                if (idx < str.len) continue :tkn .whitespace;
+                break :tkn;
+            },
+            .whitespace => {
+                while (idx < str.len and str[idx] == ' ') idx += 1;
+                if (idx < str.len) continue :tkn .new_word;
+                break :tkn;
+            },
+        }
+        //try list.append(a, null);
+        return try list.toOwnedSliceSentinel(a, null);
+    }
+
     fn exec(cmd: []const u8) !noreturn {
         var argv = cmd;
         var argv_buf: [2048]u8 = undefined;
         if (cmd[0] != '/') {
             for (sys_exes.items) |arg| {
-                if (eql(u8, arg.name, cmd)) {
-                    argv = arg.arg0;
-                    break;
+                if (startsWith(u8, cmd, arg.name)) {
+                    const args = try tokenize(std.heap.page_allocator, arg.path, cmd);
+                    for (std.mem.span(args)) |arg2| {
+                        std.debug.print("arg {s}\n", .{arg2.?});
+                    }
+                    _ = std.os.linux.execve(args[0].?, args, @ptrCast(std.os.environ.ptr));
+                    unreachable;
                 }
-            } else argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
+            }
+            argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
         }
-
         std.process.execve(
             std.heap.page_allocator,
             &[1][]const u8{argv},
@@ -911,3 +952,4 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const mem = std.mem;
 const eql = mem.eql;
+const startsWith = mem.startsWith;
