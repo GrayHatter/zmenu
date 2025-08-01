@@ -591,6 +591,16 @@ const UiCommandBox = struct {
                 textbox.key_buffer.appendAssumeCapacity(chr);
             },
             .ctrl => |ctrl| switch (ctrl) {
+                .delete_word => {
+                    while (textbox.key_buffer.items.len > 0 and textbox.key_buffer.items[textbox.key_buffer.items.len - 1] == ' ') {
+                        _ = textbox.key_buffer.pop();
+                    }
+                    while (textbox.key_buffer.items.len > 0 and textbox.key_buffer.items[textbox.key_buffer.items.len - 1] != ' ') {
+                        _ = textbox.key_buffer.pop();
+                    }
+                    comp.damaged = true;
+                    comp.redraw_req = true;
+                },
                 .backspace => {
                     comp.damaged = true;
                     _ = textbox.key_buffer.pop();
