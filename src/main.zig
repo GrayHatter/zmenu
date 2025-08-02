@@ -412,8 +412,8 @@ const UiRoot = struct {
         if (evt.up) return true;
 
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.children[0].state));
-        const history: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[1].children[0].state));
-        const paths: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].children[1].state));
+        const history: *UiOptions.History = @alignCast(@ptrCast(comp.children[1].children[0].state));
+        const paths: *UiOptions.Exec = @alignCast(@ptrCast(comp.children[1].children[1].state));
         switch (evt.key) {
             .char => {},
             .ctrl => |ctrl| switch (ctrl) {
@@ -618,15 +618,15 @@ const UiCommandBox = struct {
 const UiOptions = struct {
     pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -95);
     var children = [_]Ui.Component{
-        .{ .vtable = .auto(UiHistoryOptions), .children = &.{} },
-        .{ .vtable = .auto(UiExecOptions), .children = &.{} },
+        .{ .vtable = .auto(History), .children = &.{} },
+        .{ .vtable = .auto(Exec), .children = &.{} },
     };
 
     pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = box.add(size);
         buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
-        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
+        const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
         comp.children[0].draw(buffer, history_box);
 
         const path_box = history_box.add(.xywh(
@@ -636,7 +636,7 @@ const UiOptions = struct {
             -20 * @as(isize, @intCast(hist.drawn)),
         ));
 
-        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        const path: *Exec = @alignCast(@ptrCast(comp.children[1].state));
         path.history_count = hist.drawn;
 
         const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
@@ -651,8 +651,8 @@ const UiOptions = struct {
             _ = c.keyPress(evt);
         }
 
-        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
-        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
+        const path: *Exec = @alignCast(@ptrCast(comp.children[1].state));
         const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
         hist.cursor_idx = cursor;
         path.cursor_idx = cursor;
@@ -660,8 +660,8 @@ const UiOptions = struct {
     }
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
-        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.children[0].state));
-        const path: *UiExecOptions = @alignCast(@ptrCast(comp.children[1].state));
+        const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
+        const path: *Exec = @alignCast(@ptrCast(comp.children[1].state));
         const cursor_over: usize = ((@as(usize, @intCast(mmove.y)) -| 3) / 20);
         if (hist.cursor_idx != cursor_over + 1 or path.cursor_idx != cursor_over + 1) {
             comp.redraw_req = true;
@@ -670,243 +670,243 @@ const UiOptions = struct {
         path.cursor_idx = cursor_over + 1;
         for (comp.children) |*c| c.mMove(mmove, box);
     }
-};
 
-const UiHistoryOptions = struct {
-    alloc: Allocator,
-    cursor_idx: usize = 0,
-    drawn: usize = 0,
-    found: usize = 0,
+    const History = struct {
+        alloc: Allocator,
+        cursor_idx: usize = 0,
+        drawn: usize = 0,
+        found: usize = 0,
 
-    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
-        const options: *UiHistoryOptions = try a.create(UiHistoryOptions);
-        options.* = .{
-            .alloc = a,
-        };
-        comp.state = options;
-    }
-
-    pub fn raze(comp: *Ui.Component, a: Allocator) void {
-        a.destroy(@as(*UiHistoryOptions, @alignCast(@ptrCast(comp.state))));
-    }
-
-    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
-        const hist: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
-
-        const drawn, const found = drawHistory(
-            hist.alloc,
-            buffer,
-            hist.cursor_idx,
-            command_history,
-            ui_key_buffer.items,
-            box,
-        ) catch @panic("drawing failed");
-        hist.drawn = drawn;
-        hist.found = found;
-    }
-
-    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
-        if (evt.up) return false;
-        const histopt: *UiHistoryOptions = @alignCast(@ptrCast(comp.state));
-        switch (evt.key) {
-            .ctrl => |ctrl| {
-                switch (ctrl) {
-                    .arrow_up => histopt.cursor_idx -|= 1,
-                    .arrow_down => histopt.cursor_idx +|= 1,
-                    .tab => {
-                        if (evt.mods.shift)
-                            histopt.cursor_idx -|= 1
-                        else
-                            histopt.cursor_idx +|= 1;
-                    },
-                    else => return false,
-                }
-                comp.damaged = true;
-                return true;
-            },
-            else => {},
+        pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
+            const options: *History = try a.create(History);
+            options.* = .{
+                .alloc = a,
+            };
+            comp.state = options;
         }
-        //std.debug.print("exec keyevent {}\n", .{evt});
-        return false;
-    }
 
-    fn drawHistory(
-        a: Allocator,
-        buf: *const Buffer,
-        highlighted: usize,
-        cmds: []Command,
-        prefix: []const u8,
-        box: Buffer.Box,
-    ) !struct { usize, usize } {
-        buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
-        var drawn: usize = 0;
-        var found: usize = 0;
-        for (cmds) |cmd| {
-            const y = box.y + 20 + 20 * (drawn);
-            if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
-                found += 1;
-                if (drawn > 4) continue;
-                try drawText(
-                    a,
-                    &glyph_cache,
-                    buf,
-                    cmd.text,
-                    .xywh(box.x + 5, y, box.w, 25),
-                    theme.rgb(ARGB, .text),
-                );
-                drawn += 1;
-                if (drawn == highlighted) {
-                    buf.drawRectangleRounded(
-                        ARGB,
-                        .xywh(box.x, y - 19, box.w, 25),
-                        10,
-                        theme.rgb(ARGB, .primary),
+        pub fn raze(comp: *Ui.Component, a: Allocator) void {
+            a.destroy(@as(*History, @alignCast(@ptrCast(comp.state))));
+        }
+
+        pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+            const hist: *History = @alignCast(@ptrCast(comp.state));
+
+            const drawn, const found = drawHistory(
+                hist.alloc,
+                buffer,
+                hist.cursor_idx,
+                command_history,
+                ui_key_buffer.items,
+                box,
+            ) catch @panic("drawing failed");
+            hist.drawn = drawn;
+            hist.found = found;
+        }
+
+        pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+            if (evt.up) return false;
+            const histopt: *History = @alignCast(@ptrCast(comp.state));
+            switch (evt.key) {
+                .ctrl => |ctrl| {
+                    switch (ctrl) {
+                        .arrow_up => histopt.cursor_idx -|= 1,
+                        .arrow_down => histopt.cursor_idx +|= 1,
+                        .tab => {
+                            if (evt.mods.shift)
+                                histopt.cursor_idx -|= 1
+                            else
+                                histopt.cursor_idx +|= 1;
+                        },
+                        else => return false,
+                    }
+                    comp.damaged = true;
+                    return true;
+                },
+                else => {},
+            }
+            //std.debug.print("exec keyevent {}\n", .{evt});
+            return false;
+        }
+
+        fn drawHistory(
+            a: Allocator,
+            buf: *const Buffer,
+            highlighted: usize,
+            cmds: []Command,
+            prefix: []const u8,
+            box: Buffer.Box,
+        ) !struct { usize, usize } {
+            buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
+            var drawn: usize = 0;
+            var found: usize = 0;
+            for (cmds) |cmd| {
+                const y = box.y + 20 + 20 * (drawn);
+                if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
+                    found += 1;
+                    if (drawn > 4) continue;
+                    try drawText(
+                        a,
+                        &glyph_cache,
+                        buf,
+                        cmd.text,
+                        .xywh(box.x + 5, y, box.w, 25),
+                        theme.rgb(ARGB, .text),
                     );
-                    buf.drawRectangleRounded(
-                        ARGB,
-                        .xywh(box.x + 1, y - 18, box.w - 2, 25 - 2),
-                        9,
-                        theme.rgb(ARGB, .primary),
-                    );
+                    drawn += 1;
+                    if (drawn == highlighted) {
+                        buf.drawRectangleRounded(
+                            ARGB,
+                            .xywh(box.x, y - 19, box.w, 25),
+                            10,
+                            theme.rgb(ARGB, .primary),
+                        );
+                        buf.drawRectangleRounded(
+                            ARGB,
+                            .xywh(box.x + 1, y - 18, box.w - 2, 25 - 2),
+                            9,
+                            theme.rgb(ARGB, .primary),
+                        );
+                    }
                 }
             }
+            return .{ drawn, found };
         }
-        return .{ drawn, found };
-    }
 
-    fn getExec(hist: *UiHistoryOptions, str: []const u8) ?[]const u8 {
-        var idx: usize = 0;
-        if (hist.cursor_idx > command_history.len) return null;
-        for (command_history) |cmd| {
-            if (std.mem.startsWith(u8, cmd.text, str)) {
-                idx += 1;
-                if (idx == hist.cursor_idx) {
-                    return cmd.text;
+        fn getExec(hist: *History, str: []const u8) ?[]const u8 {
+            var idx: usize = 0;
+            if (hist.cursor_idx > command_history.len) return null;
+            for (command_history) |cmd| {
+                if (std.mem.startsWith(u8, cmd.text, str)) {
+                    idx += 1;
+                    if (idx == hist.cursor_idx) {
+                        return cmd.text;
+                    }
                 }
             }
+            return null;
         }
-        return null;
-    }
-};
+    };
 
-const UiExecOptions = struct {
-    alloc: Allocator,
-    cursor_idx: usize = 0,
-    history_count: usize = 0,
-    drawn: usize = 0,
-    found: usize = 0,
+    const Exec = struct {
+        alloc: Allocator,
+        cursor_idx: usize = 0,
+        history_count: usize = 0,
+        drawn: usize = 0,
+        found: usize = 0,
 
-    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
-        const options: *UiExecOptions = try a.create(UiExecOptions);
-        options.* = .{
-            .alloc = a,
-        };
-        comp.state = options;
-    }
-
-    pub fn raze(comp: *Ui.Component, a: Allocator) void {
-        a.destroy(@as(*UiExecOptions, @alignCast(@ptrCast(comp.state))));
-    }
-
-    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
-        const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
-
-        const drawn, const found = drawPathlist(
-            exoptions.alloc,
-            buffer,
-            exoptions.cursor_idx -| exoptions.history_count,
-            9 - exoptions.history_count,
-            sys_exes.items,
-            ui_key_buffer.items,
-            box,
-        ) catch @panic("drawing failed");
-        exoptions.drawn = drawn;
-        exoptions.found = found;
-    }
-
-    pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
-        if (evt.up) return false;
-        const exoptions: *UiExecOptions = @alignCast(@ptrCast(comp.state));
-        switch (evt.key) {
-            .ctrl => |ctrl| {
-                switch (ctrl) {
-                    .arrow_up => exoptions.cursor_idx -|= 1,
-                    .arrow_down => exoptions.cursor_idx +|= 1,
-                    .tab => {
-                        if (evt.mods.shift)
-                            exoptions.cursor_idx -|= 1
-                        else
-                            exoptions.cursor_idx +|= 1;
-                    },
-                    else => return false,
-                }
-                comp.damaged = true;
-                return true;
-            },
-            else => {},
+        pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
+            const options: *Exec = try a.create(Exec);
+            options.* = .{
+                .alloc = a,
+            };
+            comp.state = options;
         }
-        return true;
-    }
 
-    fn drawPathlist(
-        a: Allocator,
-        buf: *const Buffer,
-        highlighted: usize,
-        allowed: usize,
-        bins: []const PathExec,
-        prefix: []const u8,
-        box: Buffer.Box,
-    ) !struct { usize, usize } {
-        if (prefix.len == 0 or bins.len == 0) return .{ 0, 0 };
-        var drawn: usize = 0;
-        var found: usize = 0;
+        pub fn raze(comp: *Ui.Component, a: Allocator) void {
+            a.destroy(@as(*Exec, @alignCast(@ptrCast(comp.state))));
+        }
 
-        var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
-        for (bins) |bin| {
-            if (prefix.len == 0 or std.mem.startsWith(u8, bin.name, prefix)) {
-                found += 1;
-                if (drawn > allowed) continue;
-                try drawText(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
-                drawn += 1;
-                if (drawn == highlighted) {
-                    buf.drawRectangleRounded(
-                        ARGB,
-                        hl_box.add(.xywh(0, 1, 0, 0)),
-                        10,
-                        theme.rgb(ARGB, .primary),
-                    );
-                    buf.drawRectangleRounded(
-                        ARGB,
-                        hl_box.add(.xywh(1, 2, -2, -2)),
-                        9,
-                        theme.rgb(ARGB, .primary),
-                    );
-                }
-                hl_box.merge(.xywh(0, 20, 0, 0));
+        pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+            const exoptions: *Exec = @alignCast(@ptrCast(comp.state));
+
+            const drawn, const found = drawPathlist(
+                exoptions.alloc,
+                buffer,
+                exoptions.cursor_idx -| exoptions.history_count,
+                9 - exoptions.history_count,
+                sys_exes.items,
+                ui_key_buffer.items,
+                box,
+            ) catch @panic("drawing failed");
+            exoptions.drawn = drawn;
+            exoptions.found = found;
+        }
+
+        pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+            if (evt.up) return false;
+            const exoptions: *Exec = @alignCast(@ptrCast(comp.state));
+            switch (evt.key) {
+                .ctrl => |ctrl| {
+                    switch (ctrl) {
+                        .arrow_up => exoptions.cursor_idx -|= 1,
+                        .arrow_down => exoptions.cursor_idx +|= 1,
+                        .tab => {
+                            if (evt.mods.shift)
+                                exoptions.cursor_idx -|= 1
+                            else
+                                exoptions.cursor_idx +|= 1;
+                        },
+                        else => return false,
+                    }
+                    comp.damaged = true;
+                    return true;
+                },
+                else => {},
             }
+            return true;
         }
-        if (highlighted > drawn and drawn > 0) {
-            buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(0, 1, 0, 0)), 10, theme.rgb(ARGB, .primary));
-            buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(1, 2, -2, -2)), 9, theme.rgb(ARGB, .primary));
-        }
-        return .{ drawn, found };
-    }
 
-    fn getExec(exc: *UiExecOptions, str: []const u8, hdrawn: usize) ?[]const u8 {
-        const cursor = exc.cursor_idx -| hdrawn;
-        if (cursor == 0) return null;
-        if (cursor > exc.drawn) return null;
-        var idx: usize = 0;
-        for (sys_exes.items) |exe| {
-            if (std.mem.startsWith(u8, exe.name, str)) {
-                idx += 1;
-                if (idx == cursor) {
-                    return exe.arg0;
+        fn drawPathlist(
+            a: Allocator,
+            buf: *const Buffer,
+            highlighted: usize,
+            allowed: usize,
+            bins: []const PathExec,
+            prefix: []const u8,
+            box: Buffer.Box,
+        ) !struct { usize, usize } {
+            if (prefix.len == 0 or bins.len == 0) return .{ 0, 0 };
+            var drawn: usize = 0;
+            var found: usize = 0;
+
+            var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
+            for (bins) |bin| {
+                if (prefix.len == 0 or std.mem.startsWith(u8, bin.name, prefix)) {
+                    found += 1;
+                    if (drawn > allowed) continue;
+                    try drawText(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
+                    drawn += 1;
+                    if (drawn == highlighted) {
+                        buf.drawRectangleRounded(
+                            ARGB,
+                            hl_box.add(.xywh(0, 1, 0, 0)),
+                            10,
+                            theme.rgb(ARGB, .primary),
+                        );
+                        buf.drawRectangleRounded(
+                            ARGB,
+                            hl_box.add(.xywh(1, 2, -2, -2)),
+                            9,
+                            theme.rgb(ARGB, .primary),
+                        );
+                    }
+                    hl_box.merge(.xywh(0, 20, 0, 0));
                 }
             }
+            if (highlighted > drawn and drawn > 0) {
+                buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(0, 1, 0, 0)), 10, theme.rgb(ARGB, .primary));
+                buf.drawRectangleRounded(ARGB, hl_box.add(.xywh(1, 2, -2, -2)), 9, theme.rgb(ARGB, .primary));
+            }
+            return .{ drawn, found };
         }
-        return null;
-    }
+
+        fn getExec(exc: *Exec, str: []const u8, hdrawn: usize) ?[]const u8 {
+            const cursor = exc.cursor_idx -| hdrawn;
+            if (cursor == 0) return null;
+            if (cursor > exc.drawn) return null;
+            var idx: usize = 0;
+            for (sys_exes.items) |exe| {
+                if (std.mem.startsWith(u8, exe.name, str)) {
+                    idx += 1;
+                    if (idx == cursor) {
+                        return exe.arg0;
+                    }
+                }
+            }
+            return null;
+        }
+    };
 };
 
 fn drawText(
