@@ -193,6 +193,8 @@ pub fn main() !void {
 
     if (ui_key_buffer.items.len > 2 and user_config.history) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
+    } else if (write_history) {
+        try writeOutHistory(home_dir, command_history, "");
     }
 }
 
@@ -200,6 +202,7 @@ pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
+var write_history: bool = false;
 var glyph_cache: Ttf.GlyphCache = undefined;
 var sys_exes: std.ArrayListUnmanaged(PathExec) = undefined;
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
@@ -285,6 +288,11 @@ pub const Command = struct {
     pub fn raze(c: Command, a: Allocator) void {
         a.free(c.text);
     }
+
+    pub fn match(cmd: Command, str: []const u8) bool {
+        if (cmd.count == 0) return false;
+        return str.len == 0 or std.mem.startsWith(u8, cmd.text, str);
+    }
 };
 
 fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
@@ -331,8 +339,10 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
 
     var file = try dir.createFile(".zmenu_history.new", .{});
     var w = file.writer();
-    for (cmds) |c| try w.print("{}::{s}\n", .{ c.count, c.text });
-    if (next.count > 0) try w.print("{}::{s}\n", .{ next.count, next.text });
+    for (cmds) |c| {
+        if (c.count > 0) try w.print("{}::{s}\n", .{ c.count, c.text });
+    }
+    if (next.count > 0 and next.text.len > 0) try w.print("{}::{s}\n", .{ next.count, next.text });
     file.close();
     try dir.rename(".zmenu_history.new", ".zmenu_history");
 }
@@ -341,6 +351,10 @@ const PathExec = struct {
     path: []const u8,
     name: []const u8,
     arg0: []const u8,
+
+    pub fn match(pe: PathExec, str: []const u8) bool {
+        return str.len == 0 or std.mem.startsWith(u8, pe.name, str);
+    }
 };
 
 /// Paths must be absolute
@@ -718,6 +732,25 @@ const UiOptions = struct {
                             else
                                 histopt.cursor_idx +|= 1;
                         },
+                        .delete => {
+                            if (evt.mods.shift and evt.mods.ctrl and
+                                histopt.cursor_idx <= histopt.drawn and histopt.cursor_idx > 0)
+                            {
+                                var idx: usize = 0;
+                                for (command_history) |*cmd| {
+                                    const str = ui_key_buffer.items;
+                                    if (cmd.match(str)) {
+                                        idx += 1;
+                                        if (idx == histopt.cursor_idx) {
+                                            std.debug.print("deleting this history row '{s}'\n", .{cmd.text});
+                                            cmd.count = 0;
+                                            write_history = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        },
                         else => return false,
                     }
                     comp.damaged = true;
@@ -740,11 +773,12 @@ const UiOptions = struct {
             buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
             var drawn: usize = 0;
             var found: usize = 0;
+            const limit: usize = if (prefix.len == 0) 13 else 4;
             for (cmds) |cmd| {
                 const y = box.y + 20 + 20 * (drawn);
-                if (prefix.len == 0 or std.mem.startsWith(u8, cmd.text, prefix)) {
+                if (cmd.match(prefix)) {
                     found += 1;
-                    if (drawn > 4) continue;
+                    if (drawn > limit) continue;
                     try drawText(
                         a,
                         &glyph_cache,
@@ -777,7 +811,7 @@ const UiOptions = struct {
             var idx: usize = 0;
             if (hist.cursor_idx > command_history.len) return null;
             for (command_history) |cmd| {
-                if (std.mem.startsWith(u8, cmd.text, str)) {
+                if (cmd.match(str)) {
                     idx += 1;
                     if (idx == hist.cursor_idx) {
                         return cmd.text;
@@ -862,7 +896,7 @@ const UiOptions = struct {
 
             var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
             for (bins) |bin| {
-                if (prefix.len == 0 or std.mem.startsWith(u8, bin.name, prefix)) {
+                if (bin.match(prefix)) {
                     found += 1;
                     if (drawn > allowed) continue;
                     try drawText(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
