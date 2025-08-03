@@ -135,15 +135,18 @@ const Root = struct {
     pub fn tick(comp: *Ui.Component, iter: usize, ptr: ?*anyopaque) void {
         const this: *Root = @alignCast(@ptrCast(comp.state));
         const extra_state: *ExtraState = @alignCast(@ptrCast(ptr.?));
+        //drawColors(extra_state.buffer.width, this.rotate, extra_state.buffer, extra_state.colors) catch unreachable;
         if (iter % 180 == 0) {
             if (iter / 180 & 1 > 0) {
                 std.debug.print("swap on\n", .{});
                 this.on_color = true;
                 extra_state.char.ui.active_buffer = extra_state.colors;
+                //redraw(this.alloc, extra_state.colors) catch unreachable;
             } else {
                 std.debug.print("swap off\n", .{});
                 this.on_color = false;
                 extra_state.char.ui.active_buffer = extra_state.buffer;
+                //redraw2(this.alloc, extra_state.buffer) catch unreachable;
             }
         }
         const low: u8 = @truncate(iter);
