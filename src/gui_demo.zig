@@ -14,11 +14,12 @@ pub fn main() !void {
     defer char.raze();
 
     var root = Ui.Component{
-        .vtable = .auto(struct {}),
+        .vtable = .auto(Root),
         .box = box,
         .children = &.{},
     };
     char.ui.root = &root;
+    try char.ui.init(&root, alloc, box);
 
     const shm = char.wayland.shm orelse return error.NoWlShm;
     var buffer: Buffer = try .init(shm, box, "buffer1");
@@ -46,12 +47,21 @@ pub fn main() !void {
     }
     defer glyph_cache.raze(alloc);
 
-    try drawText2(alloc, &buffer);
+    try redraw(alloc, &colors);
+    try redraw2(alloc, &buffer);
 
-    try drawText3(alloc, &buffer);
+    var extra_state: Root.ExtraState = .{
+        .char = &char,
+        .colors = &colors,
+        .buffer = &buffer,
+    };
 
-    try drawText4(alloc, &buffer);
+    char.ui.active_buffer = &buffer;
 
+    try char.runTick(&extra_state);
+}
+
+fn redraw(_: Allocator, colors: *Buffer) !void {
     colors.drawRectangle(Buffer.ARGB, .xywh(50, 50, 50, 50), .green);
     colors.drawRectangleFill(Buffer.ARGB, .xywh(100, 75, 50, 50), .purple);
     colors.drawCircle(Buffer.ARGB, .xywh(200, 200, 50, 50), .purple);
@@ -72,7 +82,14 @@ pub fn main() !void {
     colors.drawRectangleRoundedFill(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .parchment);
     colors.drawRectangleRounded(Buffer.ARGB, .xywh(40, 600, 300, 40), 10, .bittersweet_shimmer);
     colors.drawRectangleRounded(Buffer.ARGB, .xywh(41, 601, 298, 38), 9, .bittersweet_shimmer);
+}
 
+fn redraw2(alloc: Allocator, buffer: *Buffer) !void {
+    try drawText2(alloc, buffer);
+
+    try drawText3(alloc, buffer);
+
+    try drawText4(alloc, buffer);
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(130, 110, 200, 50), .blue);
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 100, 200, 50), .red);
     buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 110, 200, 50), .alpha(.blue, 0xc8));
@@ -82,24 +99,54 @@ pub fn main() !void {
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 300, 200, 50), .red);
     buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 410, 200, 50), .alpha(.blue, 0x88));
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 400, 100, 50), .hex(0xffff00ff));
+}
 
-    var i: usize = 0;
-    while (char.wayland.connected) {
-        try char.wayland.iterate();
-        i +%= 1;
-        if (i % 100 == 0) {
-            if (i / 100 & 1 > 0) {
-                surface.attach(colors.buffer, 0, 0);
-                surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
-                surface.commit();
+const Root = struct {
+    alloc: Allocator,
+    on_color: bool,
+
+    pub const ExtraState = struct {
+        char: *charcoal.Charcoal,
+        colors: *Buffer,
+        buffer: *Buffer,
+    };
+
+    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
+        const this: *Root = try a.create(Root);
+        this.* = .{
+            .alloc = a,
+            .on_color = false,
+        };
+        comp.state = this;
+    }
+
+    pub fn draw(comp: *Ui.Component, buffer: *Buffer, _: Buffer.Box) void {
+        _ = comp;
+        //const this: *Root = @alignCast(@ptrCast(comp.state));
+        //if (this.on_color) {
+        //    redraw(this.alloc, buffer) catch unreachable;
+        //} else {
+        //    redraw2(this.alloc, buffer) catch unreachable;
+        //}
+        buffer.addDamage(.wh(buffer.width, buffer.height));
+    }
+
+    pub fn tick(comp: *Ui.Component, iter: usize, ptr: ?*anyopaque) void {
+        const this: *Root = @alignCast(@ptrCast(comp.state));
+        const extra_state: *ExtraState = @alignCast(@ptrCast(ptr.?));
+        if (iter % 180 == 0) {
+            if (iter / 180 & 1 > 0) {
+                std.debug.print("swap on\n", .{});
+                this.on_color = true;
+                extra_state.char.ui.active_buffer = extra_state.colors;
             } else {
-                surface.attach(buffer.buffer, 0, 0);
-                surface.damage(0, 0, @intCast(box.w), @intCast(box.h));
-                surface.commit();
+                std.debug.print("swap off\n", .{});
+                this.on_color = false;
+                extra_state.char.ui.active_buffer = extra_state.buffer;
             }
         }
     }
-}
+};
 
 var glyph_cache: Ttf.GlyphCache = undefined;
 
@@ -193,7 +240,6 @@ fn drawText4(alloc: Allocator, buffer: *Buffer) !void {
             @intCast(glyph.width),
             @intCast(glyph.height),
         ), glyph.pixels);
-        std.debug.print("{}\n", .{per_char});
         per_char -= per_char_delta;
         next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
     }
