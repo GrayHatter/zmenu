@@ -104,6 +104,7 @@ fn redraw2(alloc: Allocator, buffer: *Buffer) !void {
 const Root = struct {
     alloc: Allocator,
     on_color: bool,
+    color: ARGB = .black,
 
     pub const ExtraState = struct {
         char: *charcoal.Charcoal,
@@ -121,13 +122,13 @@ const Root = struct {
     }
 
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, _: Buffer.Box) void {
-        _ = comp;
-        //const this: *Root = @alignCast(@ptrCast(comp.state));
+        const this: *Root = @alignCast(@ptrCast(comp.state));
         //if (this.on_color) {
         //    redraw(this.alloc, buffer) catch unreachable;
         //} else {
         //    redraw2(this.alloc, buffer) catch unreachable;
         //}
+        buffer.drawCircleFill(Buffer.ARGB, .xywh(300, 500, 80, 80), this.color);
         buffer.addDamage(.wh(buffer.width, buffer.height));
     }
 
@@ -145,6 +146,10 @@ const Root = struct {
                 extra_state.char.ui.active_buffer = extra_state.buffer;
             }
         }
+        const low: u8 = @truncate(iter);
+        const mid: u16 = @as(u16, @truncate(iter)) >> 8;
+
+        this.color = .rgb(@truncate(mid * 4), low, @truncate(@as(u16, low) * 4));
     }
 };
 
