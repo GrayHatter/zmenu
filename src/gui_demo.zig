@@ -21,9 +21,9 @@ pub fn main() !void {
     char.ui.root = &root;
 
     const shm = char.wayland.shm orelse return error.NoWlShm;
-    const buffer: Buffer = try .init(shm, box, "buffer1");
+    var buffer: Buffer = try .init(shm, box, "buffer1");
     defer buffer.raze();
-    const colors: Buffer = try .init(shm, box, "buffer2");
+    var colors: Buffer = try .init(shm, box, "buffer2");
     defer colors.buffer.destroy();
     try drawColors(box.w, buffer, colors);
 
@@ -103,7 +103,7 @@ pub fn main() !void {
 
 var glyph_cache: Ttf.GlyphCache = undefined;
 
-fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8) !void {
+fn drawText(alloc: Allocator, buffer: *Buffer, text: []const u8) !void {
     var next_x: i32 = 0;
     for (text) |g| {
         const glyph = try glyph_cache.get(alloc, g);
@@ -117,7 +117,7 @@ fn drawText(alloc: Allocator, buffer: *const Buffer, text: []const u8) !void {
     }
 }
 
-fn drawText2(alloc: Allocator, buffer: *const Buffer) !void {
+fn drawText2(alloc: Allocator, buffer: *Buffer) !void {
     const text = "abcdefghijklmnopqrstuvwxyz";
     var next_x: i32 = 0;
     for (text) |g| {
@@ -132,7 +132,7 @@ fn drawText2(alloc: Allocator, buffer: *const Buffer) !void {
     }
 }
 
-fn drawText3(alloc: Allocator, buffer: *const Buffer) !void {
+fn drawText3(alloc: Allocator, buffer: *Buffer) !void {
     const text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     var next_x: i32 = 0;
     for (text) |g| {
@@ -147,7 +147,7 @@ fn drawText3(alloc: Allocator, buffer: *const Buffer) !void {
     }
 }
 
-fn drawText4(alloc: Allocator, buffer: *const Buffer) !void {
+fn drawText4(alloc: Allocator, buffer: *Buffer) !void {
     var next_x: i32 = 0;
     var per_char: f16 = 0xff;
     const per_char_delta: f16 = 255.0 / (0x7f.0 - 0x21.0);
