@@ -403,7 +403,7 @@ const UiRoot = struct {
         .{ .vtable = .auto(UiOptions), .children = &UiOptions.children },
     };
 
-    pub fn background(comp: *Ui.Component, b: *const Buffer, box: Buffer.Box) void {
+    pub fn background(comp: *Ui.Component, b: *Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(ARGB, box, 25, theme.rgba(ARGB, .background));
         for (comp.children) |*c| c.background(b, box);
     }
@@ -413,7 +413,7 @@ const UiRoot = struct {
         const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.x), @intCast(mmove.y)));
         if (options_box.within(mbox)) {
             comp.children[1].mMove(mmove.addOffset(-UiOptions.size.x, -UiOptions.size.y), box);
-            comp.redraw_req = comp.children[1].redraw_req or comp.redraw_req;
+            comp.draw_needed = comp.children[1].draw_needed or comp.draw_needed;
         }
         //for (comp.children) |*c| c.mMove(mmove, box);
     }
@@ -421,7 +421,7 @@ const UiRoot = struct {
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         for (comp.children) |*child| {
             _ = child.keyPress(evt);
-            comp.damaged = child.damaged or comp.damaged;
+            comp.draw_needed = child.draw_needed or comp.draw_needed;
         }
         if (evt.up) return true;
 
@@ -456,7 +456,7 @@ const UiRoot = struct {
                     return true;
                 },
                 .escape => {
-                    comp.damaged = true;
+                    comp.draw_needed = true;
                     if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
                         history.cursor_idx = 0;
                         paths.cursor_idx = 0;
@@ -474,8 +474,7 @@ const UiRoot = struct {
                         if (exe_string) |exe| {
                             textbox.key_buffer.clearRetainingCapacity();
                             textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                            comp.damaged = true;
-                            comp.redraw_req = true;
+                            comp.draw_needed = true;
                             history.cursor_idx = 0;
                             paths.cursor_idx = 0;
                         }
@@ -571,18 +570,25 @@ const UiCommandBox = struct {
         a.destroy(textbox);
     }
 
-    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, root: Buffer.Box) void {
+    pub fn background(_: *Ui.Component, b: *Buffer, root: Box) void {
+        var box = root.add(.xywh(35, 30, -35 * 2, 40 - @as(isize, @intCast(root.h))));
+        b.drawRectangleRoundedFill(ARGB, box, 10, theme.rgb(ARGB, .background));
+        b.drawRectangleRounded(ARGB, box, 10, theme.rgb(ARGB, .primary));
+        box.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, box, 9, theme.rgb(ARGB, .primary));
+        box.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, box, 8, theme.rgb(ARGB, .primary));
+        box.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, box, 7, theme.rgb(ARGB, .primary));
+    }
+
+    pub fn draw(comp: *Ui.Component, buffer: *Buffer, root: Buffer.Box) void {
+        if (!comp.draw_needed) return;
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
-        buffer.drawRectangleRoundedFill(ARGB, box, 10, theme.rgb(ARGB, .background));
-        buffer.drawRectangleRounded(ARGB, box, 10, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 9, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 8, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        buffer.drawRectangleRounded(ARGB, box, 7, theme.rgb(ARGB, .primary));
+        box.merge(.vector(3));
+        buffer.drawRectangleRoundedFill(ARGB, box, 6, theme.rgb(ARGB, .background));
 
         if (textbox.key_buffer.items.len > 0) {
             drawText(
@@ -594,14 +600,16 @@ const UiCommandBox = struct {
                 theme.rgb(ARGB, .text),
             ) catch @panic("draw the textbox failed :<");
         }
+        comp.draw_needed = false;
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         if (evt.up) return false;
         const textbox: *UiCommandBox = @alignCast(@ptrCast(comp.state));
+        comp.draw_needed = true;
         switch (evt.key) {
             .char => |chr| {
-                comp.damaged = true;
+                comp.draw_needed = true;
                 textbox.key_buffer.appendAssumeCapacity(chr);
             },
             .ctrl => |ctrl| switch (ctrl) {
@@ -612,11 +620,10 @@ const UiCommandBox = struct {
                     while (textbox.key_buffer.items.len > 0 and textbox.key_buffer.items[textbox.key_buffer.items.len - 1] != ' ') {
                         _ = textbox.key_buffer.pop();
                     }
-                    comp.damaged = true;
-                    comp.redraw_req = true;
+                    comp.draw_needed = true;
                 },
                 .backspace => {
-                    comp.damaged = true;
+                    comp.draw_needed = true;
                     _ = textbox.key_buffer.pop();
                     return true;
                 },
@@ -636,8 +643,11 @@ const UiOptions = struct {
         .{ .vtable = .auto(Exec), .children = &.{} },
     };
 
-    pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
         const history_box: Buffer.Box = box.add(size);
+
+        if (!comp.draw_needed)
+            return;
         buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
         const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
@@ -657,11 +667,12 @@ const UiOptions = struct {
         hist.cursor_idx = cursor;
         path.cursor_idx = cursor;
         comp.children[1].draw(buffer, path_box);
+        comp.draw_needed = false;
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        comp.draw_needed = true;
         for (comp.children) |*c| {
-            comp.damaged = c.damaged or comp.damaged;
             _ = c.keyPress(evt);
         }
 
@@ -674,15 +685,15 @@ const UiOptions = struct {
     }
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+        comp.draw_needed = true;
         const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
         const path: *Exec = @alignCast(@ptrCast(comp.children[1].state));
         const cursor_over: usize = ((@as(usize, @intCast(mmove.y)) -| 3) / 20);
-        if (hist.cursor_idx != cursor_over + 1 or path.cursor_idx != cursor_over + 1) {
-            comp.redraw_req = true;
-        }
         hist.cursor_idx = cursor_over + 1;
         path.cursor_idx = cursor_over + 1;
-        for (comp.children) |*c| c.mMove(mmove, box);
+        for (comp.children) |*c| {
+            c.mMove(mmove, box);
+        }
     }
 
     const History = struct {
@@ -703,7 +714,7 @@ const UiOptions = struct {
             a.destroy(@as(*History, @alignCast(@ptrCast(comp.state))));
         }
 
-        pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+        pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
             const hist: *History = @alignCast(@ptrCast(comp.state));
 
             const drawn, const found = drawHistory(
@@ -716,10 +727,12 @@ const UiOptions = struct {
             ) catch @panic("drawing failed");
             hist.drawn = drawn;
             hist.found = found;
+            comp.draw_needed = false;
         }
 
         pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
             if (evt.up) return false;
+            comp.draw_needed = true;
             const histopt: *History = @alignCast(@ptrCast(comp.state));
             switch (evt.key) {
                 .ctrl => |ctrl| {
@@ -753,7 +766,7 @@ const UiOptions = struct {
                         },
                         else => return false,
                     }
-                    comp.damaged = true;
+                    comp.draw_needed = true;
                     return true;
                 },
                 else => {},
@@ -764,13 +777,13 @@ const UiOptions = struct {
 
         fn drawHistory(
             a: Allocator,
-            buf: *const Buffer,
+            buf: *Buffer,
             highlighted: usize,
             cmds: []Command,
             prefix: []const u8,
             box: Buffer.Box,
         ) !struct { usize, usize } {
-            buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
+            //buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
             var drawn: usize = 0;
             var found: usize = 0;
             const limit: usize = if (prefix.len == 0) 13 else 4;
@@ -841,7 +854,7 @@ const UiOptions = struct {
             a.destroy(@as(*Exec, @alignCast(@ptrCast(comp.state))));
         }
 
-        pub fn draw(comp: *Ui.Component, buffer: *const Buffer, box: Buffer.Box) void {
+        pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
             const exoptions: *Exec = @alignCast(@ptrCast(comp.state));
 
             const drawn, const found = drawPathlist(
@@ -855,10 +868,12 @@ const UiOptions = struct {
             ) catch @panic("drawing failed");
             exoptions.drawn = drawn;
             exoptions.found = found;
+            comp.draw_needed = false;
         }
 
         pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
             if (evt.up) return false;
+            comp.draw_needed = true;
             const exoptions: *Exec = @alignCast(@ptrCast(comp.state));
             switch (evt.key) {
                 .ctrl => |ctrl| {
@@ -873,7 +888,7 @@ const UiOptions = struct {
                         },
                         else => return false,
                     }
-                    comp.damaged = true;
+                    comp.draw_needed = true;
                     return true;
                 },
                 else => {},
@@ -883,7 +898,7 @@ const UiOptions = struct {
 
         fn drawPathlist(
             a: Allocator,
-            buf: *const Buffer,
+            buf: *Buffer,
             highlighted: usize,
             allowed: usize,
             bins: []const PathExec,
@@ -946,7 +961,7 @@ const UiOptions = struct {
 fn drawText(
     alloc: Allocator,
     cache: *Ttf.GlyphCache,
-    buffer: *const Buffer,
+    buffer: *Buffer,
     text: []const u8,
     box: Buffer.Box,
     color: ARGB,
@@ -1001,6 +1016,7 @@ test {
 const charcoal = @import("charcoal");
 const Charcoal = charcoal.Charcoal;
 const Buffer = charcoal.Buffer;
+const Box = Buffer.Box;
 const Ttf = charcoal.TrueType;
 const Ui = charcoal.Ui;
 const ARGB = Buffer.ARGB;
