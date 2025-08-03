@@ -51,10 +51,11 @@ pub fn build(b: *Build) !void {
             .optimize = optimize,
         });
         demo.addImport("charcoal", charcoal.module("charcoal"));
+        const demo_exe = b.addExecutable(.{ .name = "demo", .root_module = demo });
+        const demo_build_step = b.step("demo-build", "build demo test thing");
+        demo_build_step.dependOn(&demo_exe.step);
 
-        const test_text = b.addExecutable(.{ .name = "text_test", .root_module = demo });
-
-        const text_run_cmd = b.addRunArtifact(test_text);
+        const text_run_cmd = b.addRunArtifact(demo_exe);
         const text_run_step = b.step("demo", "Run gui demo test thing");
         text_run_step.dependOn(&text_run_cmd.step);
     }
