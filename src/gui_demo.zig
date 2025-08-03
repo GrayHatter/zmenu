@@ -26,7 +26,7 @@ pub fn main() !void {
     defer buffer.raze();
     var colors: Buffer = try .init(shm, box, "buffer2");
     defer colors.buffer.destroy();
-    try drawColors(box.w, buffer, colors);
+    try drawColors(box.w, 0, &buffer, &colors);
 
     try char.wayland.roundtrip();
 
@@ -250,18 +250,18 @@ fn drawText4(alloc: Allocator, buffer: *Buffer) !void {
     }
 }
 
-fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
+fn drawColors(size: usize, rotate: usize, buffer: *Buffer, colors: *Buffer) !void {
     for (0..size) |x| for (0..size) |y| {
         const r_x: usize = @intCast(x * 0xff / size);
         const r_y: usize = @intCast(y * 0xff / size);
         const r: u8 = @intCast(r_x & 0xfe);
         const g: u8 = @intCast(r_y & 0xfe);
         const b: u8 = @intCast(0xff - r);
-        const c = Buffer.ARGB.rgb(r, g, b);
-        colors.draw(.xywh(x, y, 1, 1), &[1]u32{c.int()});
+        const c: ARGB = .rgb(r, g, b);
+        colors.drawPoint(ARGB, .xy((x + rotate) % size, y), c);
         const b2: u8 = 0xff - g;
-        const c2 = Buffer.ARGB.rgb(r, g, b2);
-        buffer.draw(.xywh(x, y, 1, 1), &[1]u32{@intFromEnum(c2)});
+        const c2: ARGB = .rgb(r, g, b2);
+        buffer.drawPoint(ARGB, .xy(x, (y + rotate) % size), c2);
     };
 }
 
