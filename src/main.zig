@@ -204,10 +204,10 @@ pub const std_options: std.Options = .{
 
 var write_history: bool = false;
 var glyph_cache: Ttf.GlyphCache = undefined;
-var sys_exes: std.ArrayListUnmanaged(PathExec) = undefined;
+var sys_exes: std.ArrayListUnmanaged(PathExec) = .{};
 var ui_key_buffer: *const std.ArrayListUnmanaged(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
-var command_history: []Command = undefined;
+var command_history: []Command = &.{};
 var user_config: Config = .{};
 
 pub const Config = struct {
@@ -358,7 +358,9 @@ const PathExec = struct {
 };
 
 /// Paths must be absolute
-fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged(PathExec), paths: []const ?[]const u8) void {
+fn scanPaths(a: Allocator, root_list: *std.ArrayListUnmanaged(PathExec), paths: []const ?[]const u8) void {
+    var list = root_list.*;
+
     for (paths) |path0| {
         const path = path0 orelse continue;
         var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| switch (err) {
@@ -390,6 +392,7 @@ fn scanPaths(a: Allocator, list: *std.ArrayListUnmanaged(PathExec), paths: []con
         };
         std.Thread.yield() catch {};
     }
+    root_list.* = list;
 }
 
 const UiRoot = struct {
