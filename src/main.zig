@@ -864,7 +864,7 @@ const UiOptions = struct {
                 exoptions.alloc,
                 buffer,
                 exoptions.cursor_idx -| exoptions.history_count,
-                9 - exoptions.history_count,
+                9 -| exoptions.history_count,
                 sys_exes.items,
                 ui_key_buffer.items,
                 box,
