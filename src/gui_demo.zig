@@ -99,6 +99,16 @@ fn redraw2(alloc: Allocator, buffer: *Buffer) !void {
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(30, 300, 200, 50), .red);
     buffer.drawRectangleFillMix(Buffer.ARGB, .xywh(130, 410, 200, 50), .alpha(.blue, 0x88));
     buffer.drawRectangleFill(Buffer.ARGB, .xywh(400, 400, 100, 50), .hex(0xffff00ff));
+
+    buffer.drawTriangle(ARGB, .north, .xywh(625, 575, 50, 50), .blue);
+    buffer.drawTriangle(ARGB, .west, .xywh(575, 625, 50, 50), .blue);
+    buffer.drawTriangle(ARGB, .east, .xywh(675, 625, 50, 50), .blue);
+    buffer.drawTriangle(ARGB, .south, .xywh(625, 675, 50, 50), .blue);
+
+    buffer.drawTriangle(ARGB, .north_west, .xywh(550, 550, 100, 100), .charcoal);
+    buffer.drawTriangle(ARGB, .north_east, .xywh(650, 550, 100, 100), .charcoal);
+    buffer.drawTriangle(ARGB, .south_east, .xywh(650, 650, 100, 100), .charcoal);
+    buffer.drawTriangle(ARGB, .south_west, .xywh(550, 650, 100, 100), .charcoal);
 }
 
 const Root = struct {
