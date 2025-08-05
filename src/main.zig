@@ -640,20 +640,23 @@ const UiCommandBox = struct {
 };
 
 const UiOptions = struct {
-    pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -95);
+    pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -75);
+    pub const option_size = 20;
     var children = [_]Ui.Component{
         .{ .vtable = .auto(History), .children = &.{} },
         .{ .vtable = .auto(Exec), .children = &.{} },
     };
 
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-        const history_box: Buffer.Box = box.add(size);
-
         if (!comp.draw_needed)
             return;
+
+        const history_box: Buffer.Box = box.add(size);
         buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
+        const count: usize = (box.h - -size.h) / 20;
         const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
+        hist.limit = if (ui_key_buffer.items.len > 0) 3 else count;
         comp.children[0].draw(buffer, history_box);
 
         const path_box = history_box.add(.xywh(
@@ -702,6 +705,7 @@ const UiOptions = struct {
     const History = struct {
         alloc: Allocator,
         cursor_idx: usize = 0,
+        limit: usize = 10,
         drawn: usize = 0,
         found: usize = 0,
 
@@ -724,6 +728,7 @@ const UiOptions = struct {
                 hist.alloc,
                 buffer,
                 hist.cursor_idx,
+                hist.limit,
                 command_history,
                 ui_key_buffer.items,
                 box,
@@ -786,6 +791,7 @@ const UiOptions = struct {
             a: Allocator,
             buf: *Buffer,
             highlighted: usize,
+            limit: usize,
             cmds: []Command,
             prefix: []const u8,
             box: Buffer.Box,
@@ -793,12 +799,11 @@ const UiOptions = struct {
             //buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
             var drawn: usize = 0;
             var found: usize = 0;
-            const limit: usize = if (prefix.len == 0) 13 else 4;
             for (cmds) |cmd| {
                 const y = box.y + 20 + 20 * (drawn);
                 if (cmd.match(prefix)) {
                     found += 1;
-                    if (drawn > limit) continue;
+                    if (drawn >= limit) continue;
                     try drawText(
                         a,
                         &glyph_cache,
