@@ -752,19 +752,7 @@ const UiOptions = struct {
                             if (evt.mods.shift and evt.mods.ctrl and
                                 histopt.cursor_idx <= histopt.drawn and histopt.cursor_idx > 0)
                             {
-                                var idx: usize = 0;
-                                for (command_history) |*cmd| {
-                                    const str = ui_key_buffer.items;
-                                    if (cmd.match(str)) {
-                                        idx += 1;
-                                        if (idx == histopt.cursor_idx) {
-                                            std.debug.print("deleting this history row '{s}'\n", .{cmd.text});
-                                            cmd.count = 0;
-                                            write_history = true;
-                                            break;
-                                        }
-                                    }
-                                }
+                                histopt.deleteHistoryLine();
                             }
                         },
                         else => return false,
@@ -776,6 +764,22 @@ const UiOptions = struct {
             }
             //std.debug.print("exec keyevent {}\n", .{evt});
             return false;
+        }
+
+        fn deleteHistoryLine(hist: *History) void {
+            var idx: usize = 0;
+            for (command_history) |*cmd| {
+                const str = ui_key_buffer.items;
+                if (cmd.match(str)) {
+                    idx += 1;
+                    if (idx == hist.cursor_idx) {
+                        std.debug.print("deleting this history row '{s}'\n", .{cmd.text});
+                        cmd.count = 0;
+                        write_history = true;
+                        break;
+                    }
+                }
+            }
         }
 
         fn drawHistory(
