@@ -413,9 +413,9 @@ const UiRoot = struct {
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
         const options_box = box.add(UiOptions.size);
-        const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.x), @intCast(mmove.y)));
-        if (options_box.within(mbox)) {
-            comp.children[1].mMove(mmove.addOffset(-UiOptions.size.x, -UiOptions.size.y), box);
+        //const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.pos.x), @intCast(mmove.pos.y)));
+        if (mmove.withinBox(options_box)) |new| {
+            comp.children[1].mMove(new, box);
             comp.draw_needed = comp.children[1].draw_needed or comp.draw_needed;
         }
         //for (comp.children) |*c| c.mMove(mmove, box);
@@ -486,6 +486,7 @@ const UiRoot = struct {
                 },
                 else => {},
             },
+            .focus => {},
         }
         return false;
     }
@@ -634,6 +635,7 @@ const UiCommandBox = struct {
                 .escape => {},
                 else => {},
             },
+            .focus => {},
         }
         return false;
     }
@@ -694,7 +696,7 @@ const UiOptions = struct {
         comp.draw_needed = true;
         const hist: *History = @alignCast(@ptrCast(comp.children[0].state));
         const path: *Exec = @alignCast(@ptrCast(comp.children[1].state));
-        const cursor_over: usize = ((@as(usize, @intCast(mmove.y)) -| 3) / 20);
+        const cursor_over: usize = ((@as(usize, @intCast(mmove.pos.y)) -| 3) / 20);
         hist.cursor_idx = cursor_over + 1;
         path.cursor_idx = cursor_over + 1;
         for (comp.children) |*c| {
