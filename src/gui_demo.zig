@@ -19,7 +19,7 @@ pub fn main() !void {
         .children = &.{},
     };
     char.ui.root = &root;
-    try char.ui.init(&root, alloc, box);
+    try char.ui.init(&root, alloc, box, null);
 
     const shm = char.wayland.shm orelse return error.NoWlShm;
     var buffer: Buffer = try .init(shm, box, "buffer1");
@@ -122,7 +122,7 @@ const Root = struct {
         buffer: *Buffer,
     };
 
-    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box) Ui.Component.InitError!void {
+    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box, _: ?*anyopaque) Ui.Component.InitError!void {
         const this: *Root = try a.create(Root);
         this.* = .{
             .alloc = a,
@@ -132,7 +132,7 @@ const Root = struct {
     }
 
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, _: Buffer.Box) void {
-        const this: *Root = @alignCast(@ptrCast(comp.state));
+        const this: *Root = @ptrCast(@alignCast(comp.state));
         //if (this.on_color) {
         //    redraw(this.alloc, buffer) catch unreachable;
         //} else {
@@ -143,8 +143,8 @@ const Root = struct {
     }
 
     pub fn tick(comp: *Ui.Component, iter: usize, ptr: ?*anyopaque) void {
-        const this: *Root = @alignCast(@ptrCast(comp.state));
-        const extra_state: *ExtraState = @alignCast(@ptrCast(ptr.?));
+        const this: *Root = @ptrCast(@alignCast(comp.state));
+        const extra_state: *ExtraState = @ptrCast(@alignCast(ptr.?));
         //drawColors(extra_state.buffer.width, this.rotate, extra_state.buffer, extra_state.colors) catch unreachable;
         if (iter % 180 == 0) {
             if (iter / 180 & 1 > 0) {
