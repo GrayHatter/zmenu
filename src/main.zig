@@ -1,90 +1,11 @@
-const ZMenu = struct {
-    charcoal: Charcoal,
-    running: bool = true,
-
-    pub fn init() !ZMenu {
-        return .{
-            .charcoal = try .init(),
-        };
-    }
-
-    pub fn raze(zm: *ZMenu) void {
-        zm.charcoal.raze();
-    }
-
-    pub fn iterate(zm: *ZMenu) !void {
-        try zm.charcoal.iterate();
-    }
-
-    /// I'm not a fan of this API either, but it lives here until I can decide
-    /// where it belongs.
-    pub fn end(zm: *ZMenu) void {
-        zm.running = false;
-        zm.charcoal.running = false;
-    }
-};
-
-var zmenu: ZMenu = .{
-    .charcoal = undefined,
-};
-
-pub const Theme = struct {
-    bg: u32,
-    text: u32,
-    p: u32,
-    s: u32,
-    t: u32,
-
-    bg_alpha: u8 = 0xef,
-
-    pub const Color = enum(u32) {
-        background,
-        text,
-        primary,
-        secondary,
-        tertiary,
-
-        _,
-    };
-
-    pub fn init(T: type, bg: T, text: T, p: T, s: T, t: T) Theme {
-        return .{
-            .bg = @intFromEnum(bg),
-            .text = @intFromEnum(text),
-            .p = @intFromEnum(p),
-            .s = @intFromEnum(s),
-            .t = @intFromEnum(t),
-        };
-    }
-
-    pub fn rgba(th: Theme, T: type, color: Color) T {
-        return switch (color) {
-            .background => .alpha(@enumFromInt(th.bg), th.bg_alpha),
-            .text => .alpha(@enumFromInt(th.text), th.bg_alpha),
-            .primary => .alpha(@enumFromInt(th.p), th.bg_alpha),
-            .secondary => .alpha(@enumFromInt(th.s), th.bg_alpha),
-            .tertiary => .alpha(@enumFromInt(th.t), th.bg_alpha),
-            else => .alpha(@enumFromInt(@intFromEnum(color)), th.bg_alpha),
-        };
-    }
-
-    pub fn rgb(th: Theme, T: type, color: Color) T {
-        return switch (color) {
-            .background => @enumFromInt(th.bg),
-            .text => @enumFromInt(th.text),
-            .primary => @enumFromInt(th.p),
-            .secondary => @enumFromInt(th.s),
-            .tertiary => @enumFromInt(th.t),
-            else => @enumFromInt(@intFromEnum(color)),
-        };
-    }
-};
+pub const Theme = @import("Theme.zig");
 
 pub var theme: Theme = .init(ARGB, .eerie_black, .silver, .sinopia, .cornsilk, .avocado);
 
 var environ: std.process.Environ = undefined;
 // TODO remove
 var _io: Io = undefined;
+var running: *bool = undefined;
 
 pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
@@ -93,16 +14,18 @@ pub fn main(init: std.process.Init) !void {
     environ = init.minimal.environ;
     var args = init.minimal.args.iterate();
 
-    zmenu = try .init();
-    try zmenu.charcoal.connect();
-    defer zmenu.raze();
+    var charcoal: Charcoal = try .init();
+    try charcoal.connect();
+    defer charcoal.raze();
 
     // Primary size
     const box: Buffer.Box = .wh(600, 300);
     // Resize here first to trick wl into the position we want
-    var buffer: Buffer = try zmenu.charcoal.createBufferCapacity(box, box.add(.wh(0, 1000)), "buffer");
+    var buffer: Buffer = try charcoal.createBufferCapacity(box, box.add(.wh(0, 1000)), "buffer");
     defer buffer.raze();
-    try zmenu.charcoal.wayland.rename("zmenu");
+    try charcoal.wayland.rename("zmenu");
+    // lol, I'm sorry
+    running = &charcoal.running;
 
     var root: Root = .{};
     Root.cmd_box.alloc = alloc;
@@ -111,8 +34,8 @@ pub fn main(init: std.process.Init) !void {
     Root.options.history.alloc = alloc;
     Root.options.exec.alloc = alloc;
 
-    try zmenu.charcoal.ui.init(&root.component, &buffer, box, null);
-    defer zmenu.charcoal.ui.raze(alloc);
+    try charcoal.ui.init(&root.component, &buffer, box, null);
+    defer charcoal.ui.raze(alloc);
 
     const home_dir: std.Io.Dir = h: {
         while (args.next()) |env| {
@@ -178,8 +101,8 @@ pub fn main(init: std.process.Init) !void {
     if (user_config.theme.secondary) |sd| theme.s = @intFromEnum(sd);
     if (user_config.theme.tertiary) |tr| theme.t = @intFromEnum(tr);
 
-    zmenu.charcoal.ui.active_buffer = &buffer;
-    try zmenu.charcoal.runRateLimit(.fps(60), io);
+    charcoal.ui.active_buffer = &buffer;
+    try charcoal.runRateLimit(.fps(60), io);
 
     if (ui_key_buffer.items.len > 2 and user_config.history) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items, io);
@@ -459,7 +382,7 @@ const Root = struct {
                             }
                             textbox.key_buffer.clearRetainingCapacity();
                             textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                            zmenu.end();
+                            running.* = false;
                         }
                     } else if (textbox.key_buffer.items.len > 0) {
                         const pid = std.posix.system.fork();
@@ -467,7 +390,7 @@ const Root = struct {
                         if (pid == 0) {
                             exec(textbox.key_buffer.items, _io) catch {};
                         }
-                        zmenu.end();
+                        running.* = false;
                     }
                     return true;
                 },
@@ -479,7 +402,7 @@ const Root = struct {
                     } else if (textbox.key_buffer.items.len > 0) {
                         textbox.key_buffer.clearRetainingCapacity();
                     } else {
-                        zmenu.end();
+                        running.* = false;
                     }
                     return true;
                 },
@@ -892,7 +815,6 @@ fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
 
 test {
     _ = &Buffer;
-    _ = &ZMenu;
     _ = &Ui;
     _ = &std.testing.refAllDecls(@This());
 }
