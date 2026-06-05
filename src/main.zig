@@ -1,4 +1,5 @@
 pub const Theme = @import("Theme.zig");
+const drawing = @import("drawing.zig");
 
 pub var theme: Theme = .init(ARGB, .eerie_black, .silver, .sinopia, .cornsilk, .avocado);
 
@@ -522,7 +523,7 @@ const CommandBox = struct {
         buffer.drawRectangleRoundedFill(ARGB, box, 6, theme.rgb(ARGB, .background));
 
         if (textbox.key_buffer.items.len > 0) {
-            drawText(
+            drawing.text(
                 textbox.alloc,
                 &glyph_cache,
                 buffer,
@@ -723,7 +724,7 @@ const Options = struct {
                 if (bin.match(prefix)) {
                     found += 1;
                     if (drawn > allowed) continue;
-                    try drawText(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
+                    try drawing.text(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
                     drawn += 1;
                     if (drawn == highlighted) {
                         buf.drawRectangleRounded(
@@ -766,54 +767,6 @@ const Options = struct {
         }
     };
 };
-
-pub fn drawText(
-    alloc: Allocator,
-    cache: *Ttf.GlyphCache,
-    buffer: *Buffer,
-    text: []const u8,
-    box: Buffer.Box,
-    color: ARGB,
-) !void {
-    var next_x: i32 = 0;
-    for (text) |g| {
-        const glyph = try cache.get(alloc, g);
-        buffer.drawFont(ARGB, color, .xywh(
-            @intCast(@as(i32, @intCast(box.x)) + glyph.off_x + next_x),
-            @intCast(@as(i32, @intCast(box.y)) + glyph.off_y),
-            @intCast(glyph.width),
-            @intCast(glyph.height),
-        ), glyph.pixels);
-        next_x += @as(i32, @intCast(glyph.width)) + @as(i32, @intCast(glyph.off_x));
-    }
-}
-
-fn drawColors(size: usize, buffer: Buffer, colors: Buffer) !void {
-    for (0..size) |x| for (0..size) |y| {
-        const r_x: usize = @intCast(x * 0xff / size);
-        const r_y: usize = @intCast(y * 0xff / size);
-        const r: u8 = @intCast(r_x & 0xfe);
-        const g: u8 = @intCast(r_y & 0xfe);
-        const b: u8 = @intCast(0xff - r);
-        const c = ARGB.rgb(r, g, b);
-        colors.draw(.xywh(x, y, 1, 1), &[1]u32{c.int()});
-        const b2: u8 = 0xff - g;
-        const c2 = ARGB.rgb(r, g, b2);
-        buffer.draw(.xywh(x, y, 1, 1), &[1]u32{@intFromEnum(c2)});
-    };
-}
-
-fn drawBackground0(buf: Buffer, box: Buffer.Box) !void {
-    for (box.y..box.y2()) |y| for (box.x..box.x2()) |x| {
-        const r_y: usize = @intCast(y * 0xff / buf.width);
-        const r_x: usize = @intCast(x * 0xff / buf.width);
-        const r: u8 = @intCast(r_x & 0xfe);
-        const g: u8 = @intCast(r_y & 0xfe);
-        const b: u8 = 0xff - g;
-        const c = ARGB.rgb(r, g, b);
-        buf.drawPoint(ARGB, .xy(x, y), c);
-    };
-}
 
 test {
     _ = &Buffer;

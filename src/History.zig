@@ -105,7 +105,7 @@ fn drawHistory(
         if (cmd.match(prefix)) {
             found += 1;
             if (drawn >= limit) continue;
-            try main.drawText(
+            try drawing.text(
                 a,
                 &main.glyph_cache,
                 buf,
@@ -156,3 +156,4 @@ const Ui = Charcoal.Ui;
 const ARGB = Buffer.ARGB;
 
 const main = @import("main.zig");
+const drawing = @import("drawing.zig");
