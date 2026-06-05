@@ -572,20 +572,22 @@ const Options = struct {
     component: Ui.Component,
     history: History,
     exec: Exec,
+    kids: [2]*Ui.Component = undefined,
 
     pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -75);
     pub const option_size = 20;
-    var children = [_]Ui.Component{
-        .{ .vtable = .auto(History), .children = &.{} },
-        .{ .vtable = .auto(Exec), .children = &.{} },
-    };
 
     pub const background = null;
-    pub const init = null;
     pub const mAxis = null;
     pub const mClick = null;
     pub const raze = null;
     pub const tick = null;
+
+    pub fn init(comp: *Ui.Component, _: Buffer.Box, _: ?Allocator) !void {
+        const opt: *Options = @fieldParentPtr("component", comp);
+        opt.kids = .{ &opt.history.component, &opt.exec.component };
+        comp.children = &opt.kids;
+    }
 
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
         const opt: *Options = @fieldParentPtr("component", comp);
