@@ -8,10 +8,6 @@ const ZMenu = struct {
         };
     }
 
-    pub fn connect(zm: *ZMenu) !void {
-        try zm.charcoal.connect();
-    }
-
     pub fn raze(zm: *ZMenu) void {
         zm.charcoal.raze();
     }
@@ -84,14 +80,7 @@ pub const Theme = struct {
     }
 };
 
-var theme: Theme = .init(
-    ARGB,
-    .eerie_black,
-    .silver,
-    .sinopia,
-    .cornsilk,
-    .avocado,
-);
+pub var theme: Theme = .init(ARGB, .eerie_black, .silver, .sinopia, .cornsilk, .avocado);
 
 var environ: std.process.Environ = undefined;
 // TODO remove
@@ -105,6 +94,8 @@ pub fn main(init: std.process.Init) !void {
     var args = init.minimal.args.iterate();
 
     zmenu = try .init();
+    try zmenu.charcoal.connect();
+    defer zmenu.raze();
 
     // Primary size
     const box: Buffer.Box = .wh(600, 300);
@@ -114,19 +105,20 @@ pub fn main(init: std.process.Init) !void {
     try zmenu.charcoal.wayland.rename("zmenu");
 
     var root: Root = .{};
+    Root.cmd_box.alloc = alloc;
+    Root.cmd_box.key_buffer = try .initCapacity(alloc, 4096);
+    ui_key_buffer = &Root.cmd_box.key_buffer;
+    Root.options.history.alloc = alloc;
+    Root.options.exec.alloc = alloc;
 
     try zmenu.charcoal.ui.init(&root.component, &buffer, box, null);
     defer zmenu.charcoal.ui.raze(alloc);
-
-    // init wayland stuffs
-    try zmenu.connect();
-    defer zmenu.raze();
 
     const home_dir: std.Io.Dir = h: {
         while (args.next()) |env| {
             if (std.mem.startsWith(u8, env, "HOME=")) {
                 if (env[5..].len == 0) continue;
-                if (std.Io.Dir.openDirAbsolute(io, env[5..], .{})) |dir| {
+                if (Io.Dir.openDirAbsolute(io, env[5..], .{})) |dir| {
                     break :h dir;
                 } else |err| {
                     std.debug.print(
@@ -187,7 +179,7 @@ pub fn main(init: std.process.Init) !void {
     if (user_config.theme.tertiary) |tr| theme.t = @intFromEnum(tr);
 
     zmenu.charcoal.ui.active_buffer = &buffer;
-    try zmenu.charcoal.run();
+    try zmenu.charcoal.runRateLimit(.fps(60), io);
 
     if (ui_key_buffer.items.len > 2 and user_config.history) {
         try writeOutHistory(home_dir, command_history, ui_key_buffer.items, io);
@@ -200,12 +192,12 @@ pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
-var write_history: bool = false;
-var glyph_cache: Ttf.GlyphCache = undefined;
+pub var write_history: bool = false;
+pub var glyph_cache: Ttf.GlyphCache = undefined;
 var sys_exes: ArrayList(PathExec) = .empty;
-var ui_key_buffer: *const ArrayList(u8) = undefined;
+pub var ui_key_buffer: *const ArrayList(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
-var command_history: []Command = &.{};
+pub var command_history: []Command = &.{};
 var user_config: Config = .{};
 
 pub const Config = struct {
@@ -401,22 +393,20 @@ fn scanPaths(root_list: *ArrayList(PathExec), paths: []const ?[]const u8, a: All
 const Root = struct {
     component: Ui.Component = .{
         .vtable = .auto(Root),
-        .children = &.{},
+        .children = &.{ &cmd_box.component, &options.component },
     },
+    m_enabled: bool = false,
 
     var cmd_box: CommandBox = .{
         .component = .{ .vtable = .auto(CommandBox), .children = &.{} },
         .alloc = undefined,
-        .key_buffer = undefined,
     };
     var options: Options = .{
         .component = .{ .vtable = .auto(Options), .children = &.{} },
-        .history = .{
-            .component = .{ .vtable = .auto(Options.History), .children = &.{} },
-        },
+        .history = .{ .component = .{ .vtable = .auto(Options.History), .children = &.{} } },
         .exec = .{
-            .alloc = undefined,
             .component = .{ .vtable = .auto(Options.Exec), .children = &.{} },
+            .alloc = undefined,
         },
     };
 
@@ -432,6 +422,8 @@ const Root = struct {
     }
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+        const root: *Root = @fieldParentPtr("component", comp);
+        if (!root.m_enabled) return;
         const options_box = box.add(Options.size);
         //const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.pos.x), @intCast(mmove.pos.y)));
         if (mmove.withinBox(options_box)) |new| {
@@ -577,7 +569,7 @@ const Root = struct {
 const CommandBox = struct {
     component: Ui.Component,
     alloc: Allocator,
-    key_buffer: ArrayList(u8),
+    key_buffer: ArrayList(u8) = .empty,
 
     pub const init = null;
     pub const raze = null;
@@ -696,7 +688,7 @@ const Options = struct {
         const cursor: usize = @min(@max(opt.history.cursor_idx, opt.exec.cursor_idx), opt.history.drawn + opt.exec.drawn);
         opt.history.cursor_idx = cursor;
         opt.exec.cursor_idx = cursor;
-        comp.children[1].draw(buffer, path_box);
+        opt.exec.component.draw(buffer, path_box);
         comp.draw_needed = false;
     }
 
@@ -724,154 +716,7 @@ const Options = struct {
         }
     }
 
-    const History = struct {
-        component: Ui.Component,
-        alloc: Allocator = undefined,
-        cursor_idx: usize = 0,
-        limit: usize = 10,
-        drawn: usize = 0,
-        found: usize = 0,
-
-        pub const background = null;
-        pub const mAxis = null;
-        pub const mClick = null;
-        pub const mMove = null;
-        pub const tick = null;
-
-        pub fn init(_: *Ui.Component, _: Buffer.Box, _: ?Allocator) Ui.Component.InitError!void {
-            //const options: *History = try a.?.create(History);
-        }
-
-        pub fn raze(comp: *Ui.Component, a: ?Allocator) void {
-            const h: *History = @fieldParentPtr("component", comp);
-            a.?.destroy(h);
-        }
-
-        pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-            const h: *History = @fieldParentPtr("component", comp);
-
-            const drawn, const found = drawHistory(
-                h.alloc,
-                buffer,
-                h.cursor_idx,
-                h.limit,
-                command_history,
-                ui_key_buffer.items,
-                box,
-            ) catch @panic("drawing failed");
-            h.drawn = drawn;
-            h.found = found;
-            comp.draw_needed = false;
-        }
-
-        pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
-            const histopt: *History = @fieldParentPtr("component", comp);
-            if (evt.up) return false;
-            comp.draw_needed = true;
-            switch (evt.key) {
-                .ctrl => |ctrl| {
-                    switch (ctrl) {
-                        .arrow_up => histopt.cursor_idx -|= 1,
-                        .arrow_down => histopt.cursor_idx +|= 1,
-                        .tab => {
-                            if (evt.mods.shift)
-                                histopt.cursor_idx -|= 1
-                            else
-                                histopt.cursor_idx +|= 1;
-                        },
-                        .delete => {
-                            if (evt.mods.shift and evt.mods.ctrl and
-                                histopt.cursor_idx <= histopt.drawn and histopt.cursor_idx > 0)
-                            {
-                                histopt.deleteHistoryLine();
-                            }
-                        },
-                        else => return false,
-                    }
-                    comp.draw_needed = true;
-                    return true;
-                },
-                else => {},
-            }
-            //std.debug.print("exec keyevent {}\n", .{evt});
-            return false;
-        }
-
-        fn deleteHistoryLine(hist: *History) void {
-            var idx: usize = 0;
-            for (command_history) |*cmd| {
-                const str = ui_key_buffer.items;
-                if (cmd.match(str)) {
-                    idx += 1;
-                    if (idx == hist.cursor_idx) {
-                        std.debug.print("deleting this history row '{s}'\n", .{cmd.text});
-                        cmd.count = 0;
-                        write_history = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        fn drawHistory(
-            a: Allocator,
-            buf: *Buffer,
-            highlighted: usize,
-            limit: usize,
-            cmds: []Command,
-            prefix: []const u8,
-            box: Buffer.Box,
-        ) !struct { usize, usize } {
-            //buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
-            var drawn: usize = 0;
-            var found: usize = 0;
-            for (cmds) |cmd| {
-                const y = box.y + 20 + 20 * (drawn);
-                if (cmd.match(prefix)) {
-                    found += 1;
-                    if (drawn >= limit) continue;
-                    try drawText(
-                        a,
-                        &glyph_cache,
-                        buf,
-                        cmd.text,
-                        .xywh(box.x + 5, y, box.w, 25),
-                        theme.rgb(ARGB, .text),
-                    );
-                    drawn += 1;
-                    if (drawn == highlighted) {
-                        buf.drawRectangleRounded(
-                            ARGB,
-                            .xywh(box.x, y - 19, box.w, 25),
-                            10,
-                            theme.rgb(ARGB, .primary),
-                        );
-                        buf.drawRectangleRounded(
-                            ARGB,
-                            .xywh(box.x + 1, y - 18, box.w - 2, 25 - 2),
-                            9,
-                            theme.rgb(ARGB, .primary),
-                        );
-                    }
-                }
-            }
-            return .{ drawn, found };
-        }
-
-        fn getExec(hist: *History, str: []const u8) ?[]const u8 {
-            var idx: usize = 0;
-            if (hist.cursor_idx > command_history.len) return null;
-            for (command_history) |cmd| {
-                if (cmd.match(str)) {
-                    idx += 1;
-                    if (idx == hist.cursor_idx) {
-                        return cmd.text;
-                    }
-                }
-            }
-            return null;
-        }
-    };
+    const History = @import("History.zig");
 
     const Exec = struct {
         component: Ui.Component,
@@ -997,7 +842,7 @@ const Options = struct {
     };
 };
 
-fn drawText(
+pub fn drawText(
     alloc: Allocator,
     cache: *Ttf.GlyphCache,
     buffer: *Buffer,
