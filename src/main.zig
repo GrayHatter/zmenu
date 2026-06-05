@@ -93,59 +93,57 @@ var theme: Theme = .init(
     .avocado,
 );
 
-pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
-    const alloc = gpa.allocator();
+var environ: std.process.Environ = undefined;
+// TODO remove
+var _io: Io = undefined;
+
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.gpa;
+    _io = init.io;
+    const io = _io;
+    environ = init.minimal.environ;
+    var args = init.minimal.args.iterate();
 
     zmenu = try .init();
 
     // Primary size
     const box: Buffer.Box = .wh(600, 300);
-    UiRoot.component.box = box;
-    var root: Ui.Component = UiRoot.component;
+    // Resize here first to trick wl into the position we want
+    var buffer: Buffer = try zmenu.charcoal.createBufferCapacity(box, box.add(.wh(0, 1000)), "buffer");
+    defer buffer.raze();
+    try zmenu.charcoal.wayland.rename("zmenu");
 
-    try zmenu.charcoal.ui.init(&root, alloc, box, null);
+    var root: Root = .{};
+
+    try zmenu.charcoal.ui.init(&root.component, &buffer, box, null);
     defer zmenu.charcoal.ui.raze(alloc);
 
     // init wayland stuffs
     try zmenu.connect();
     defer zmenu.raze();
 
-    // Resize here first to trick wl into the position we want
-    var buffer: Buffer = try zmenu.charcoal.createBufferCapacity(box.add(.wh(0, 300)), .wh(600, 2000));
-    defer buffer.raze();
-    // technically this isn't required because the size of the buffer is used,
-    // but it doesn't hurt to be safe. I'm sure someone would have broken this
-    // eventually.
-    try zmenu.charcoal.wayland.resize(box.add(.wh(0, 300)));
-    try zmenu.charcoal.wayland.attach(buffer);
-    try zmenu.charcoal.wayland.roundtrip();
-    // the real size we want
-    try buffer.resize(box);
-
-    const home_dir: std.fs.Dir = h: {
-        for (std.os.environ) |envZ| {
-            const env = std.mem.span(envZ);
+    const home_dir: std.Io.Dir = h: {
+        while (args.next()) |env| {
             if (std.mem.startsWith(u8, env, "HOME=")) {
                 if (env[5..].len == 0) continue;
-                if (std.fs.openDirAbsolute(env[5..], .{})) |dir| {
+                if (std.Io.Dir.openDirAbsolute(io, env[5..], .{})) |dir| {
                     break :h dir;
                 } else |err| {
                     std.debug.print(
                         "Unable to open home dir specified by $HOME '{s}' error {}\n",
                         .{ env[5..], err },
                     );
-                    break :h std.fs.cwd();
+                    break :h std.Io.Dir.cwd();
                 }
             }
         }
-        break :h std.fs.cwd();
+        break :h std.Io.Dir.cwd();
     };
 
+    args = init.minimal.args.iterate();
     const paths: []const ?[]const u8 = b: {
         var path_env: ?[]const u8 = null;
-        for (std.os.environ) |envZ| {
-            const env = std.mem.span(envZ);
+        while (args.next()) |env| {
             if (std.mem.startsWith(u8, env, "PATH=")) {
                 path_env = env[5..];
                 break;
@@ -161,7 +159,7 @@ pub fn main() !void {
         break :b paths;
     };
     sys_exes = try .initCapacity(alloc, 8192);
-    var thread = try std.Thread.spawn(.{}, scanPaths, .{ alloc, &sys_exes, paths });
+    var thread = try std.Thread.spawn(.{}, scanPaths, .{ &sys_exes, paths, alloc, io });
     defer thread.join();
 
     const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
@@ -171,13 +169,13 @@ pub fn main() !void {
     glyph_cache = .init(&ttf, 0.01866);
     defer glyph_cache.raze(alloc);
 
-    user_config = loadRc(home_dir, alloc) catch |err| b: {
+    user_config = loadRc(home_dir, alloc, io) catch |err| b: {
         std.debug.print("error loading rc {}\n", .{err});
         break :b .{};
     };
 
     if (user_config.history) {
-        command_history = loadHistory(home_dir, alloc) catch |err| b: {
+        command_history = loadHistory(home_dir, alloc, io) catch |err| b: {
             std.debug.print("error loading history {}\n", .{err});
             break :b &.{};
         };
@@ -192,9 +190,9 @@ pub fn main() !void {
     try zmenu.charcoal.run();
 
     if (ui_key_buffer.items.len > 2 and user_config.history) {
-        try writeOutHistory(home_dir, command_history, ui_key_buffer.items);
+        try writeOutHistory(home_dir, command_history, ui_key_buffer.items, io);
     } else if (write_history) {
-        try writeOutHistory(home_dir, command_history, "");
+        try writeOutHistory(home_dir, command_history, "", io);
     }
 }
 
@@ -204,7 +202,7 @@ pub const std_options: std.Options = .{
 
 var write_history: bool = false;
 var glyph_cache: Ttf.GlyphCache = undefined;
-var sys_exes: ArrayList(PathExec) = .{};
+var sys_exes: ArrayList(PathExec) = .empty;
 var ui_key_buffer: *const ArrayList(u8) = undefined;
 var ttf_ptr: *const Ttf = undefined;
 var command_history: []Command = &.{};
@@ -246,8 +244,8 @@ fn parseHexColor(str: []const u8) !ARGB {
     return color;
 }
 
-fn loadRc(dir: std.fs.Dir, a: Allocator) !Config {
-    const rc = dir.readFileAlloc(a, ".zmenurc", 0x1ffff) catch |err| switch (err) {
+fn loadRc(dir: Io.Dir, a: Allocator, io: Io) !Config {
+    const rc = dir.readFileAlloc(io, ".zmenurc", a, .limited(0x1ffff)) catch |err| switch (err) {
         error.FileNotFound => return .{},
         else => return err,
     };
@@ -295,8 +293,8 @@ pub const Command = struct {
     }
 };
 
-fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
-    const history = dir.readFileAlloc(a, ".zmenu_history", 0x1ffff) catch |err| switch (err) {
+fn loadHistory(dir: Io.Dir, a: Allocator, io: Io) ![]Command {
+    const history = dir.readFileAlloc(io, ".zmenu_history", a, .limited(0x1ffff)) catch |err| switch (err) {
         error.FileNotFound => return &.{},
         else => return err,
     };
@@ -319,7 +317,7 @@ fn loadHistory(dir: std.fs.Dir, a: Allocator) ![]Command {
     return cmds;
 }
 
-fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
+fn writeOutHistory(dir: Io.Dir, cmds: []Command, new: []const u8, io: Io) !void {
     var next: Command = .{
         .count = 1,
         .text = new,
@@ -338,10 +336,10 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
     }.inner);
 
     {
-        var file = try dir.createFile(".zmenu_history.new", .{});
-        defer file.close();
+        var file = try dir.createFile(io, ".zmenu_history.new", .{});
+        defer file.close(io);
         var w_b: [4096]u8 = undefined;
-        var file_w = file.writer(&w_b);
+        var file_w = file.writer(io, &w_b);
         const w = &file_w.interface;
         defer w.flush() catch unreachable;
         for (cmds) |c| {
@@ -349,7 +347,7 @@ fn writeOutHistory(dir: std.fs.Dir, cmds: []Command, new: []const u8) !void {
         }
         if (next.count > 0 and next.text.len > 0) try w.print("{}::{s}\n", .{ next.count, next.text });
     }
-    try dir.rename(".zmenu_history.new", ".zmenu_history");
+    try dir.rename(".zmenu_history.new", dir, ".zmenu_history", io);
 }
 
 const PathExec = struct {
@@ -363,22 +361,22 @@ const PathExec = struct {
 };
 
 /// Paths must be absolute
-fn scanPaths(a: Allocator, root_list: *ArrayList(PathExec), paths: []const ?[]const u8) void {
+fn scanPaths(root_list: *ArrayList(PathExec), paths: []const ?[]const u8, a: Allocator, io: Io) void {
     var list = root_list.*;
 
     for (paths) |path0| {
         const path = path0 orelse continue;
-        var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| switch (err) {
+        var dir = Io.Dir.openDirAbsolute(io, path, .{ .iterate = true }) catch |err| switch (err) {
             error.FileNotFound => continue, // It's expected that some dirs will go missing
             else => {
                 std.debug.print("Unable to open path '{s}' because {}\n", .{ path, err });
                 continue;
             },
         };
-        defer dir.close();
+        defer dir.close(io);
         var ditr = dir.iterate();
 
-        while (ditr.next() catch |err| {
+        while (ditr.next(io) catch |err| {
             std.debug.print("Unable to iterate on path '{s}' because {}\n", .{ path, err });
             break;
         }) |file| switch (file.kind) {
@@ -400,24 +398,41 @@ fn scanPaths(a: Allocator, root_list: *ArrayList(PathExec), paths: []const ?[]co
     root_list.* = list;
 }
 
-const UiRoot = struct {
-    var component: Ui.Component = .{
-        .vtable = .auto(UiRoot),
-        .children = &children,
+const Root = struct {
+    component: Ui.Component = .{
+        .vtable = .auto(Root),
+        .children = &.{},
+    },
+
+    var cmd_box: CommandBox = .{
+        .component = .{ .vtable = .auto(CommandBox), .children = &.{} },
+        .alloc = undefined,
+        .key_buffer = undefined,
+    };
+    var options: Options = .{
+        .component = .{ .vtable = .auto(Options), .children = &.{} },
+        .history = .{
+            .component = .{ .vtable = .auto(Options.History), .children = &.{} },
+        },
+        .exec = .{
+            .alloc = undefined,
+            .component = .{ .vtable = .auto(Options.Exec), .children = &.{} },
+        },
     };
 
-    var children = [_]Ui.Component{
-        .{ .vtable = .auto(UiCommandBox), .children = &.{} },
-        .{ .vtable = .auto(UiOptions), .children = &UiOptions.children },
-    };
+    pub const draw = null;
+    pub const init = null;
+    pub const mAxis = null;
+    pub const mClick = null;
+    pub const raze = null;
+    pub const tick = null;
 
-    pub fn background(comp: *Ui.Component, b: *Buffer, box: Buffer.Box) void {
+    pub fn background(_: *Ui.Component, b: *Buffer, box: Buffer.Box) void {
         b.drawRectangleRoundedFill(ARGB, box, 25, theme.rgba(ARGB, .background));
-        for (comp.children) |*c| c.background(b, box);
     }
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
-        const options_box = box.add(UiOptions.size);
+        const options_box = box.add(Options.size);
         //const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.pos.x), @intCast(mmove.pos.y)));
         if (mmove.withinBox(options_box)) |new| {
             comp.children[1].mMove(new, box);
@@ -427,15 +442,16 @@ const UiRoot = struct {
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
-        for (comp.children) |*child| {
+        for (comp.children) |child| {
             _ = child.keyPress(evt);
             comp.draw_needed = child.draw_needed or comp.draw_needed;
         }
         if (evt.up) return true;
 
-        const textbox: *UiCommandBox = @ptrCast(@alignCast(comp.children[0].state));
-        const history: *UiOptions.History = @ptrCast(@alignCast(comp.children[1].children[0].state));
-        const paths: *UiOptions.Exec = @ptrCast(@alignCast(comp.children[1].children[1].state));
+        const textbox: *CommandBox = &cmd_box;
+        //const root: *Root = @fieldParentPtr("component", comp);
+        const history: *Options.History = &options.history;
+        const paths: *Options.Exec = &options.exec;
         switch (evt.key) {
             .char => {},
             .ctrl => |ctrl| switch (ctrl) {
@@ -444,22 +460,22 @@ const UiRoot = struct {
                         const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
                             paths.getExec(textbox.key_buffer.items, history.drawn);
                         if (exe_string) |exe| {
-                            if (std.posix.fork()) |pid| {
-                                if (pid == 0) {
-                                    exec(exe) catch {};
-                                }
-                                textbox.key_buffer.clearRetainingCapacity();
-                                textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                                zmenu.end();
-                            } else |_| @panic("everyone knows fork can't fail");
+                            const pid = std.posix.system.fork();
+                            if (pid < 0) @panic("everyone knows fork can't fail");
+                            if (pid == 0) {
+                                exec(exe, _io) catch {};
+                            }
+                            textbox.key_buffer.clearRetainingCapacity();
+                            textbox.key_buffer.appendSliceAssumeCapacity(exe);
+                            zmenu.end();
                         }
                     } else if (textbox.key_buffer.items.len > 0) {
-                        if (std.posix.fork()) |pid| {
-                            if (pid == 0) {
-                                exec(textbox.key_buffer.items) catch {};
-                            }
-                            zmenu.end();
-                        } else |_| @panic("everyone knows fork can't fail");
+                        const pid = std.posix.system.fork();
+                        if (pid < 0) @panic("everyone knows fork can't fail");
+                        if (pid == 0) {
+                            exec(textbox.key_buffer.items, _io) catch {};
+                        }
+                        zmenu.end();
                     }
                     return true;
                 },
@@ -506,7 +522,7 @@ const UiRoot = struct {
     fn tokenize(a: Allocator, path: []const u8, str: []const u8) ![*:null]const ?[*:0]const u8 {
         var start: usize = 0;
         var idx: usize = 0;
-        var list: ArrayList(?[*:0]const u8) = .{};
+        var list: ArrayList(?[*:0]const u8) = .empty;
         if (str.len == 0) return &.{};
         tkn: switch (state.start) {
             .start => {
@@ -535,7 +551,7 @@ const UiRoot = struct {
         return try list.toOwnedSliceSentinel(a, null);
     }
 
-    fn exec(cmd: []const u8) !noreturn {
+    fn exec(cmd: []const u8, io: Io) !noreturn {
         if (cmd[0] != '/') {
             for (sys_exes.items) |arg| {
                 if (startsWith(u8, cmd, arg.name)) {
@@ -543,40 +559,32 @@ const UiRoot = struct {
                     for (std.mem.span(args)) |arg2| {
                         std.debug.print("arg {s}\n", .{arg2.?});
                     }
-                    _ = std.os.linux.execve(args[0].?, args, @ptrCast(std.os.environ.ptr));
+                    _ = std.os.linux.execve(args[0].?, args, @ptrCast(environ.block.slice.ptr));
                     unreachable;
                 }
             }
         }
         var argv_buf: [2048]u8 = undefined;
         const argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
-        std.process.execve(
-            std.heap.page_allocator,
-            &[1][]const u8{argv},
-            null,
-        ) catch @panic("oopsies");
+        std.process.replace(io, .{
+            .argv = &[1][]const u8{argv},
+            .expand_arg0 = .no_expand,
+            .environ_map = null,
+        }) catch @panic("oopsies");
     }
 };
 
-const UiCommandBox = struct {
+const CommandBox = struct {
+    component: Ui.Component,
     alloc: Allocator,
     key_buffer: ArrayList(u8),
 
-    pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box, _: ?*anyopaque) Ui.Component.InitError!void {
-        const textbox: *UiCommandBox = try a.create(UiCommandBox);
-        textbox.* = .{
-            .alloc = a,
-            .key_buffer = try .initCapacity(a, 4096),
-        };
-        comp.state = textbox;
-        ui_key_buffer = &textbox.key_buffer;
-    }
-
-    pub fn raze(comp: *Ui.Component, a: Allocator) void {
-        const textbox: *UiCommandBox = @ptrCast(@alignCast(comp.state));
-        textbox.key_buffer.deinit(a);
-        a.destroy(textbox);
-    }
+    pub const init = null;
+    pub const raze = null;
+    pub const mAxis = null;
+    pub const mClick = null;
+    pub const mMove = null;
+    pub const tick = null;
 
     pub fn background(_: *Ui.Component, b: *Buffer, root: Box) void {
         var box = root.add(.xywh(35, 30, -35 * 2, 40 - @as(isize, @intCast(root.h))));
@@ -592,7 +600,7 @@ const UiCommandBox = struct {
 
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, root: Buffer.Box) void {
         if (!comp.draw_needed) return;
-        const textbox: *UiCommandBox = @ptrCast(@alignCast(comp.state));
+        const textbox: *CommandBox = @fieldParentPtr("component", comp);
         var box = root;
         box = .xywh(35, 30, 600 - 35 * 2, 40);
         box.merge(.vector(3));
@@ -613,7 +621,7 @@ const UiCommandBox = struct {
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
         if (evt.up) return false;
-        const textbox: *UiCommandBox = @ptrCast(@alignCast(comp.state));
+        const textbox: *CommandBox = @fieldParentPtr("component", comp);
         comp.draw_needed = true;
         switch (evt.key) {
             .char => |chr| {
@@ -645,7 +653,11 @@ const UiCommandBox = struct {
     }
 };
 
-const UiOptions = struct {
+const Options = struct {
+    component: Ui.Component,
+    history: History,
+    exec: Exec,
+
     pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -75);
     pub const option_size = 20;
     var children = [_]Ui.Component{
@@ -653,7 +665,15 @@ const UiOptions = struct {
         .{ .vtable = .auto(Exec), .children = &.{} },
     };
 
+    pub const background = null;
+    pub const init = null;
+    pub const mAxis = null;
+    pub const mClick = null;
+    pub const raze = null;
+    pub const tick = null;
+
     pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
+        const opt: *Options = @fieldParentPtr("component", comp);
         if (!comp.draw_needed)
             return;
 
@@ -661,93 +681,93 @@ const UiOptions = struct {
         buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
         const count: usize = (box.h - -size.h) / 20;
-        const hist: *History = @ptrCast(@alignCast(comp.children[0].state));
-        hist.limit = if (ui_key_buffer.items.len > 0) 3 else count;
-        comp.children[0].draw(buffer, history_box);
+        opt.history.limit = if (ui_key_buffer.items.len > 0) 3 else count;
+        opt.history.component.draw(buffer, history_box);
 
         const path_box = history_box.add(.xywh(
             0,
-            @intCast(20 * (hist.drawn)),
+            @intCast(20 * (opt.history.drawn)),
             0,
-            -20 * @as(isize, @intCast(hist.drawn)),
+            -20 * @as(isize, @intCast(opt.history.drawn)),
         ));
 
-        const path: *Exec = @ptrCast(@alignCast(comp.children[1].state));
-        path.history_count = hist.drawn;
+        opt.exec.history_count = opt.history.drawn;
 
-        const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
-        hist.cursor_idx = cursor;
-        path.cursor_idx = cursor;
+        const cursor: usize = @min(@max(opt.history.cursor_idx, opt.exec.cursor_idx), opt.history.drawn + opt.exec.drawn);
+        opt.history.cursor_idx = cursor;
+        opt.exec.cursor_idx = cursor;
         comp.children[1].draw(buffer, path_box);
         comp.draw_needed = false;
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        const opt: *Options = @fieldParentPtr("component", comp);
         comp.draw_needed = true;
-        for (comp.children) |*c| {
+        for (comp.children) |c| {
             _ = c.keyPress(evt);
         }
 
-        const hist: *History = @ptrCast(@alignCast(comp.children[0].state));
-        const path: *Exec = @ptrCast(@alignCast(comp.children[1].state));
-        const cursor: usize = @min(@max(hist.cursor_idx, path.cursor_idx), hist.drawn + path.drawn);
-        hist.cursor_idx = cursor;
-        path.cursor_idx = cursor;
+        const cursor: usize = @min(@max(opt.history.cursor_idx, opt.exec.cursor_idx), opt.history.drawn + opt.exec.drawn);
+        opt.history.cursor_idx = cursor;
+        opt.exec.cursor_idx = cursor;
         return true;
     }
 
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+        const opt: *Options = @fieldParentPtr("component", comp);
         comp.draw_needed = true;
-        const hist: *History = @ptrCast(@alignCast(comp.children[0].state));
-        const path: *Exec = @ptrCast(@alignCast(comp.children[1].state));
         const cursor_over: usize = ((@as(usize, @intCast(mmove.pos.y)) -| 3) / 20);
-        hist.cursor_idx = cursor_over + 1;
-        path.cursor_idx = cursor_over + 1;
-        for (comp.children) |*c| {
+        opt.history.cursor_idx = cursor_over + 1;
+        opt.exec.cursor_idx = cursor_over + 1;
+        for (comp.children) |c| {
             c.mMove(mmove, box);
         }
     }
 
     const History = struct {
-        alloc: Allocator,
+        component: Ui.Component,
+        alloc: Allocator = undefined,
         cursor_idx: usize = 0,
         limit: usize = 10,
         drawn: usize = 0,
         found: usize = 0,
 
-        pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box, _: ?*anyopaque) Ui.Component.InitError!void {
-            const options: *History = try a.create(History);
-            options.* = .{
-                .alloc = a,
-            };
-            comp.state = options;
+        pub const background = null;
+        pub const mAxis = null;
+        pub const mClick = null;
+        pub const mMove = null;
+        pub const tick = null;
+
+        pub fn init(_: *Ui.Component, _: Buffer.Box, _: ?Allocator) Ui.Component.InitError!void {
+            //const options: *History = try a.?.create(History);
         }
 
-        pub fn raze(comp: *Ui.Component, a: Allocator) void {
-            a.destroy(@as(*History, @ptrCast(@alignCast(comp.state))));
+        pub fn raze(comp: *Ui.Component, a: ?Allocator) void {
+            const h: *History = @fieldParentPtr("component", comp);
+            a.?.destroy(h);
         }
 
         pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-            const hist: *History = @ptrCast(@alignCast(comp.state));
+            const h: *History = @fieldParentPtr("component", comp);
 
             const drawn, const found = drawHistory(
-                hist.alloc,
+                h.alloc,
                 buffer,
-                hist.cursor_idx,
-                hist.limit,
+                h.cursor_idx,
+                h.limit,
                 command_history,
                 ui_key_buffer.items,
                 box,
             ) catch @panic("drawing failed");
-            hist.drawn = drawn;
-            hist.found = found;
+            h.drawn = drawn;
+            h.found = found;
             comp.draw_needed = false;
         }
 
         pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+            const histopt: *History = @fieldParentPtr("component", comp);
             if (evt.up) return false;
             comp.draw_needed = true;
-            const histopt: *History = @ptrCast(@alignCast(comp.state));
             switch (evt.key) {
                 .ctrl => |ctrl| {
                     switch (ctrl) {
@@ -854,26 +874,27 @@ const UiOptions = struct {
     };
 
     const Exec = struct {
+        component: Ui.Component,
         alloc: Allocator,
         cursor_idx: usize = 0,
         history_count: usize = 0,
         drawn: usize = 0,
         found: usize = 0,
 
-        pub fn init(comp: *Ui.Component, a: Allocator, _: Buffer.Box, _: ?*anyopaque) Ui.Component.InitError!void {
-            const options: *Exec = try a.create(Exec);
-            options.* = .{
-                .alloc = a,
-            };
-            comp.state = options;
-        }
+        pub const background = null;
+        pub const mAxis = null;
+        pub const mClick = null;
+        pub const mMove = null;
+        pub const tick = null;
 
-        pub fn raze(comp: *Ui.Component, a: Allocator) void {
-            a.destroy(@as(*Exec, @ptrCast(@alignCast(comp.state))));
+        pub fn init(_: *Ui.Component, _: Buffer.Box, _: ?Allocator) Ui.Component.InitError!void {}
+
+        pub fn raze(_: *Ui.Component, _: ?Allocator) void {
+            //const exec: *Exec = @fieldParentPtr("component", comp);
         }
 
         pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-            const exoptions: *Exec = @ptrCast(@alignCast(comp.state));
+            const exoptions: *Exec = @fieldParentPtr("component", comp);
 
             const drawn, const found = drawPathlist(
                 exoptions.alloc,
@@ -890,9 +911,9 @@ const UiOptions = struct {
         }
 
         pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+            const exoptions: *Exec = @fieldParentPtr("component", comp);
             if (evt.up) return false;
             comp.draw_needed = true;
-            const exoptions: *Exec = @ptrCast(@alignCast(comp.state));
             switch (evt.key) {
                 .ctrl => |ctrl| {
                     switch (ctrl) {
@@ -1031,16 +1052,16 @@ test {
     _ = &std.testing.refAllDecls(@This());
 }
 
-const charcoal = @import("charcoal");
-const Charcoal = charcoal.Charcoal;
-const Buffer = charcoal.Buffer;
+const Charcoal = @import("charcoal");
+const Buffer = Charcoal.Buffer;
 const Box = Buffer.Box;
-const Ttf = charcoal.TrueType;
-const Ui = charcoal.Ui;
+const Ttf = Charcoal.TrueType;
+const Ui = Charcoal.Ui;
 const ARGB = Buffer.ARGB;
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const ArrayList = std.ArrayList;
 const mem = std.mem;
 const eql = mem.eql;
