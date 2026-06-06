@@ -58,12 +58,21 @@ pub fn main(init: std.process.Init) !void {
     args = init.minimal.args.iterate();
     const paths: []const ?[]const u8 = b: {
         var path_env: ?[]const u8 = null;
+        if (init.minimal.environ.createMap(alloc)) |env| {
+            if (env.get("PATH")) |path| {
+                path_env = path;
+            }
+        } else |_| unreachable;
+
+        // we check args first to allow them to override env
         while (args.next()) |env| {
-            if (std.mem.startsWith(u8, env, "PATH=")) {
+            if (startsWith(u8, env, "PATH=")) {
                 path_env = env[5..];
                 break;
             }
-        }
+        } else if (init.minimal.environ.createMap(alloc)) |env| {
+            if (env.get("PATH")) |path| path_env = path;
+        } else |_| unreachable;
         const path_count = std.mem.count(u8, path_env orelse "", ":");
         if (path_env == null or path_count == 0) break :b &[_]?[]const u8{"/usr/bin"};
         const paths = try alloc.alloc(?[]const u8, path_count + 1);
@@ -452,11 +461,12 @@ pub const Root = struct {
         }
         var argv_buf: [2048]u8 = undefined;
         const argv = try std.fmt.bufPrint(&argv_buf, "/usr/bin/{s}", .{cmd});
-        std.process.replace(io, .{
-            .argv = &[1][]const u8{argv},
-            .expand_arg0 = .no_expand,
+        const e = std.process.replace(io, .{
+            .argv = &.{argv},
+            .expand_arg0 = .expand,
             .environ_map = null,
-        }) catch @panic("oopsies");
+        });
+        @panic(@errorName(e));
     }
 };
 
