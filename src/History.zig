@@ -1,5 +1,4 @@
-component: Ui.Component,
-alloc: Allocator = undefined,
+component: Ui.Component = .{ .vtable = .auto(History) },
 cursor_idx: usize = 0,
 limit: usize = 10,
 drawn: usize = 0,
@@ -12,37 +11,29 @@ pub const mAxis = null;
 pub const mClick = null;
 pub const mMove = null;
 pub const tick = null;
-
-pub fn init(_: *Ui.Component, _: Buffer.Box, _: ?Allocator) Ui.Component.InitError!void {
-    //const options: *History = try a.?.create(History);
-}
-
-pub fn raze(comp: *Ui.Component, a: ?Allocator) void {
-    const h: *History = @fieldParentPtr("component", comp);
-    a.?.destroy(h);
-}
+pub const init = null;
+pub const raze = null;
 
 pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
     const h: *History = @fieldParentPtr("component", comp);
+    const opts: *main.Options = @fieldParentPtr("history", h);
+    const root: *main.Root = @fieldParentPtr("options", opts);
 
-    const drawn, const found = drawHistory(
-        h.alloc,
+    h.drawn, h.found = drawHistory(
         buffer,
         h.cursor_idx,
         h.limit,
         main.command_history,
-        main.ui_key_buffer.items,
+        root.cmd_box.key_buffer.items,
         box,
     ) catch @panic("drawing failed");
-    h.drawn = drawn;
-    h.found = found;
     comp.draw_needed = false;
 }
 
 pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+    defer comp.draw_needed = true;
     const histopt: *History = @fieldParentPtr("component", comp);
     if (evt.up) return false;
-    comp.draw_needed = true;
     switch (evt.key) {
         .ctrl => |ctrl| {
             switch (ctrl) {
@@ -74,8 +65,10 @@ pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
 
 fn deleteHistoryLine(hist: *History) void {
     var idx: usize = 0;
+    const opts: *main.Options = @fieldParentPtr("history", hist);
+    const root: *main.Root = @fieldParentPtr("options", opts);
     for (main.command_history) |*cmd| {
-        const str = main.ui_key_buffer.items;
+        const str = root.cmd_box.key_buffer.items;
         if (cmd.match(str)) {
             idx += 1;
             if (idx == hist.cursor_idx) {
@@ -89,13 +82,12 @@ fn deleteHistoryLine(hist: *History) void {
 }
 
 fn drawHistory(
-    a: Allocator,
     buf: *Buffer,
     highlighted: usize,
     limit: usize,
     cmds: []main.Command,
     prefix: []const u8,
-    box: Buffer.Box,
+    box: Box,
 ) !struct { usize, usize } {
     //buf.drawRectangleFill(ARGB, box.add(.xy(-5, 0)), theme.rgba(ARGB, .background));
     var drawn: usize = 0;
@@ -105,14 +97,7 @@ fn drawHistory(
         if (cmd.match(prefix)) {
             found += 1;
             if (drawn >= limit) continue;
-            try drawing.text(
-                a,
-                &main.glyph_cache,
-                buf,
-                cmd.text,
-                .xywh(box.x + 5, y, box.w, 25),
-                main.theme.rgb(ARGB, .text),
-            );
+            try drawing.text(buf, cmd.text, .xywh(box.x + 5, y, box.w, 25), main.theme.rgb(ARGB, .text));
             drawn += 1;
             if (drawn == highlighted) {
                 buf.drawRectangleRounded(
@@ -152,6 +137,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Charcoal = @import("charcoal");
 const Buffer = Charcoal.Buffer;
+const Box = Buffer.Box;
 const Ui = Charcoal.Ui;
 const ARGB = Buffer.ARGB;
 

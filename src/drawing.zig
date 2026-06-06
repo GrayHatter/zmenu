@@ -1,14 +1,24 @@
-pub fn text(
-    alloc: Allocator,
-    cache: *Ttf.GlyphCache,
-    buffer: *Buffer,
-    string: []const u8,
-    box: Buffer.Box,
-    color: ARGB,
-) !void {
+pub var g_cache: Ttf.GlyphCache = undefined;
+
+var alloc: Allocator = undefined;
+var ttf: Ttf = undefined;
+
+pub fn init(a: Allocator) !void {
+    alloc = a;
+    const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
+    ttf = try .load(@alignCast(font));
+    g_cache = .init(&ttf, 0.01866);
+}
+
+pub fn raze() void {
+    g_cache.raze(alloc);
+    alloc.free(ttf.ttf_bytes);
+}
+
+pub fn text(buffer: *Buffer, string: []const u8, box: Buffer.Box, color: ARGB) !void {
     var next_x: i32 = 0;
     for (string) |g| {
-        const glyph = try cache.get(alloc, g);
+        const glyph = try g_cache.get(alloc, g);
         buffer.drawFont(ARGB, color, .xywh(
             @intCast(@as(i32, @intCast(box.x)) + glyph.off_x + next_x),
             @intCast(@as(i32, @intCast(box.y)) + glyph.off_y),

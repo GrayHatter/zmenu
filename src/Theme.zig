@@ -8,6 +8,16 @@ bg_alpha: u8 = 0xef,
 
 const Theme = @This();
 
+pub fn Typed(Type: type) type {
+    return struct {
+        background: ?Type = null,
+        text: ?Type = null,
+        primary: ?Type = null,
+        secondary: ?Type = null,
+        tertiary: ?Type = null,
+    };
+}
+
 pub const Color = enum(u32) {
     background,
     text,

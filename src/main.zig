@@ -1,43 +1,42 @@
-pub const Theme = @import("Theme.zig");
-const drawing = @import("drawing.zig");
+pub const std_options: std.Options = .{
+    .log_level = .info,
+};
 
+pub var write_history: bool = false;
+pub var command_history: []Command = &.{};
 pub var theme: Theme = .init(ARGB, .eerie_black, .silver, .sinopia, .cornsilk, .avocado);
-
+var sys_exes: ArrayList(PathExec) = .empty;
+var user_config: Config = .{};
 var environ: std.process.Environ = undefined;
 // TODO remove
 var _io: Io = undefined;
-var running: *bool = undefined;
+
+pub const Config = struct {
+    history: bool = true,
+    theme: Theme.Typed(ARGB) = .{},
+};
 
 pub fn main(init: std.process.Init) !void {
-    const alloc = init.gpa;
+    const alloc = init.arena.allocator();
     _io = init.io;
     const io = _io;
     environ = init.minimal.environ;
-    var args = init.minimal.args.iterate();
 
     var charcoal: Charcoal = try .init();
     try charcoal.connect();
     defer charcoal.raze();
 
     // Primary size
-    const box: Buffer.Box = .wh(600, 300);
+    const box: Box = .wh(600, 300);
     // Resize here first to trick wl into the position we want
     var buffer: Buffer = try charcoal.createBufferCapacity(box, box.add(.wh(0, 1000)), "buffer");
     defer buffer.raze();
     try charcoal.wayland.rename("zmenu");
     // lol, I'm sorry
-    running = &charcoal.running;
 
-    var root: Root = .{};
-    Root.cmd_box.alloc = alloc;
-    Root.cmd_box.key_buffer = try .initCapacity(alloc, 4096);
-    ui_key_buffer = &Root.cmd_box.key_buffer;
-    Root.options.history.alloc = alloc;
-    Root.options.exec.alloc = alloc;
+    sys_exes = try .initCapacity(alloc, 8192);
 
-    try charcoal.ui.init(&root.component, &buffer, box, null);
-    defer charcoal.ui.raze(alloc);
-
+    var args = init.minimal.args.iterate();
     const home_dir: std.Io.Dir = h: {
         while (args.next()) |env| {
             if (std.mem.startsWith(u8, env, "HOME=")) {
@@ -74,16 +73,11 @@ pub fn main(init: std.process.Init) !void {
         }
         break :b paths;
     };
-    sys_exes = try .initCapacity(alloc, 8192);
-    var thread = try std.Thread.spawn(.{}, scanPaths, .{ &sys_exes, paths, alloc, io });
-    defer thread.join();
+    var thread = try io.concurrent(scanPaths, .{ &sys_exes, paths, alloc, io });
+    defer thread.await(io);
 
-    const font: []u8 = try alloc.dupe(u8, @embedFile("font.ttf"));
-    defer alloc.free(font);
-    const ttf = try Ttf.load(@alignCast(font));
-
-    glyph_cache = .init(&ttf, 0.01866);
-    defer glyph_cache.raze(alloc);
+    try drawing.init(alloc);
+    defer drawing.raze();
 
     user_config = loadRc(home_dir, alloc, io) catch |err| b: {
         std.debug.print("error loading rc {}\n", .{err});
@@ -102,38 +96,19 @@ pub fn main(init: std.process.Init) !void {
     if (user_config.theme.secondary) |sd| theme.s = @intFromEnum(sd);
     if (user_config.theme.tertiary) |tr| theme.t = @intFromEnum(tr);
 
-    charcoal.ui.active_buffer = &buffer;
+    var root: Root = .{
+        .char = &charcoal,
+    };
+    try charcoal.ui.init(&root.component, &buffer, box, alloc);
+    defer charcoal.ui.raze(alloc);
     try charcoal.runRateLimit(.fps(60), io);
 
-    if (ui_key_buffer.items.len > 2 and user_config.history) {
-        try writeOutHistory(home_dir, command_history, ui_key_buffer.items, io);
+    if (root.cmd_box.key_buffer.items.len > 2 and user_config.history) {
+        try writeOutHistory(home_dir, command_history, root.cmd_box.key_buffer.items, io);
     } else if (write_history) {
         try writeOutHistory(home_dir, command_history, "", io);
     }
 }
-
-pub const std_options: std.Options = .{
-    .log_level = .info,
-};
-
-pub var write_history: bool = false;
-pub var glyph_cache: Ttf.GlyphCache = undefined;
-var sys_exes: ArrayList(PathExec) = .empty;
-pub var ui_key_buffer: *const ArrayList(u8) = undefined;
-var ttf_ptr: *const Ttf = undefined;
-pub var command_history: []Command = &.{};
-var user_config: Config = .{};
-
-pub const Config = struct {
-    history: bool = true,
-    theme: struct {
-        background: ?ARGB = null,
-        text: ?ARGB = null,
-        primary: ?ARGB = null,
-        secondary: ?ARGB = null,
-        tertiary: ?ARGB = null,
-    } = .{},
-};
 
 // TODO support other color formats
 fn parseHexColor(str: []const u8) !ARGB {
@@ -234,10 +209,7 @@ fn loadHistory(dir: Io.Dir, a: Allocator, io: Io) ![]Command {
 }
 
 fn writeOutHistory(dir: Io.Dir, cmds: []Command, new: []const u8, io: Io) !void {
-    var next: Command = .{
-        .count = 1,
-        .text = new,
-    };
+    var next: Command = .{ .count = 1, .text = new };
     for (cmds) |*cmd| {
         if (std.mem.eql(u8, cmd.text, new)) {
             cmd.count += 1;
@@ -257,11 +229,11 @@ fn writeOutHistory(dir: Io.Dir, cmds: []Command, new: []const u8, io: Io) !void 
         var w_b: [4096]u8 = undefined;
         var file_w = file.writer(io, &w_b);
         const w = &file_w.interface;
-        defer w.flush() catch unreachable;
-        for (cmds) |c| {
+        for (cmds) |c|
             if (c.count > 0) try w.print("{}::{s}\n", .{ c.count, c.text });
-        }
+
         if (next.count > 0 and next.text.len > 0) try w.print("{}::{s}\n", .{ next.count, next.text });
+        try w.flush();
     }
     try dir.rename(".zmenu_history.new", dir, ".zmenu_history", io);
 }
@@ -314,109 +286,107 @@ fn scanPaths(root_list: *ArrayList(PathExec), paths: []const ?[]const u8, a: All
     root_list.* = list;
 }
 
-const Root = struct {
-    component: Ui.Component = .{
-        .vtable = .auto(Root),
-        .children = &.{ &cmd_box.component, &options.component },
-    },
+pub const Root = struct {
+    component: Ui.Component = .{ .vtable = .auto(Root), .children = &.{} },
+    char: *Charcoal,
+    cmd_box: CommandBox = .new,
+    options: Options = .new,
+    kids: [2]*Ui.Component = undefined,
     m_enabled: bool = false,
 
-    var cmd_box: CommandBox = .{
-        .component = .{ .vtable = .auto(CommandBox), .children = &.{} },
-        .alloc = undefined,
-    };
-    var options: Options = .{
-        .component = .{ .vtable = .auto(Options), .children = &.{} },
-        .history = .{ .component = .{ .vtable = .auto(Options.History), .children = &.{} } },
-        .exec = .{
-            .component = .{ .vtable = .auto(Options.Exec), .children = &.{} },
-            .alloc = undefined,
-        },
-    };
-
-    pub const draw = null;
-    pub const init = null;
     pub const mAxis = null;
     pub const mClick = null;
     pub const raze = null;
     pub const tick = null;
 
-    pub fn background(_: *Ui.Component, b: *Buffer, box: Buffer.Box) void {
-        b.drawRectangleRoundedFill(ARGB, box, 25, theme.rgba(ARGB, .background));
+    pub fn init(comp: *Ui.Component, box: Box, a: ?Allocator) !void {
+        const root: *Root = @fieldParentPtr("component", comp);
+        root.cmd_box = .new;
+        root.options = .new;
+
+        root.kids = .{ &root.cmd_box.component, &root.options.component };
+        comp.children = &root.kids;
+
+        for (comp.children) |c| try c.init(box, a);
     }
 
-    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+    pub fn draw(comp: *Ui.Component, buf: *Buffer, box: Box) void {
+        defer comp.draw_needed = false;
+        //if (comp.draw_needed) comp.background(buf, box);
+        for (comp.children) |child| child.draw(buf, box);
+    }
+
+    pub fn background(comp: *Ui.Component, b: *Buffer, box: Box) void {
+        defer comp.draw_needed = true;
+        b.drawRectangleRoundedFill(ARGB, box, 25, theme.rgba(ARGB, .background));
+        for (comp.children) |c| c.background(b, box);
+    }
+
+    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Box) void {
         const root: *Root = @fieldParentPtr("component", comp);
         if (!root.m_enabled) return;
         const options_box = box.add(Options.size);
-        //const mbox = Buffer.Box.zero.add(.xy(@intCast(mmove.pos.x), @intCast(mmove.pos.y)));
         if (mmove.withinBox(options_box)) |new| {
-            comp.children[1].mMove(new, box);
-            comp.draw_needed = comp.children[1].draw_needed or comp.draw_needed;
+            root.options.component.mMove(new, box);
+            comp.draw_needed |= root.cmd_box.component.draw_needed or root.options.component.draw_needed;
         }
-        //for (comp.children) |*c| c.mMove(mmove, box);
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
-        for (comp.children) |child| {
-            _ = child.keyPress(evt);
-            comp.draw_needed = child.draw_needed or comp.draw_needed;
-        }
+        defer comp.draw_needed = true;
+        for (comp.children) |child| _ = child.keyPress(evt);
         if (evt.up) return true;
 
-        const textbox: *CommandBox = &cmd_box;
-        //const root: *Root = @fieldParentPtr("component", comp);
-        const history: *Options.History = &options.history;
-        const paths: *Options.Exec = &options.exec;
+        const root: *Root = @fieldParentPtr("component", comp);
         switch (evt.key) {
             .char => {},
             .ctrl => |ctrl| switch (ctrl) {
                 .enter => {
-                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
-                        const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
-                            paths.getExec(textbox.key_buffer.items, history.drawn);
+                    if (root.options.history.cursor_idx > 0 or root.options.exec.cursor_idx > 0) {
+                        const exe_string: ?[]const u8 = root.options.history.getExec(root.cmd_box.key_buffer.items) orelse
+                            root.options.exec.getExec(root.cmd_box.key_buffer.items, root.options.history.drawn);
                         if (exe_string) |exe| {
                             const pid = std.posix.system.fork();
                             if (pid < 0) @panic("everyone knows fork can't fail");
                             if (pid == 0) {
                                 exec(exe, _io) catch {};
                             }
-                            textbox.key_buffer.clearRetainingCapacity();
-                            textbox.key_buffer.appendSliceAssumeCapacity(exe);
-                            running.* = false;
+                            root.cmd_box.key_buffer.clearRetainingCapacity();
+                            root.cmd_box.key_buffer.appendSliceAssumeCapacity(exe);
+                            root.char.quit();
                         }
-                    } else if (textbox.key_buffer.items.len > 0) {
+                    } else if (root.cmd_box.key_buffer.items.len > 0) {
                         const pid = std.posix.system.fork();
                         if (pid < 0) @panic("everyone knows fork can't fail");
                         if (pid == 0) {
-                            exec(textbox.key_buffer.items, _io) catch {};
+                            exec(root.cmd_box.key_buffer.items, _io) catch {};
                         }
-                        running.* = false;
+                        root.char.quit();
                     }
                     return true;
                 },
                 .escape => {
                     comp.draw_needed = true;
-                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
-                        history.cursor_idx = 0;
-                        paths.cursor_idx = 0;
-                    } else if (textbox.key_buffer.items.len > 0) {
-                        textbox.key_buffer.clearRetainingCapacity();
+                    if (root.options.history.cursor_idx > 0 or root.options.exec.cursor_idx > 0) {
+                        root.options.history.cursor_idx = 0;
+                        root.options.exec.cursor_idx = 0;
+                    } else if (root.cmd_box.key_buffer.items.len > 0) {
+                        root.cmd_box.key_buffer.clearRetainingCapacity();
                     } else {
-                        running.* = false;
+                        root.char.quit();
                     }
                     return true;
                 },
                 .arrow_left, .arrow_right => {
-                    if (history.cursor_idx > 0 or paths.cursor_idx > 0) {
-                        const exe_string: ?[]const u8 = history.getExec(textbox.key_buffer.items) orelse
-                            paths.getExec(textbox.key_buffer.items, history.drawn);
+                    if (root.options.history.cursor_idx > 0 or root.options.exec.cursor_idx > 0) {
+                        const exe_string: ?[]const u8 = root.options.history.getExec(root.cmd_box.key_buffer.items) orelse
+                            root.options.exec.getExec(root.cmd_box.key_buffer.items, root.options.history.drawn);
                         if (exe_string) |exe| {
-                            textbox.key_buffer.clearRetainingCapacity();
-                            textbox.key_buffer.appendSliceAssumeCapacity(exe);
+                            root.cmd_box.key_buffer.clearRetainingCapacity();
+                            root.cmd_box.key_buffer.appendSliceAssumeCapacity(exe);
                             comp.draw_needed = true;
-                            history.cursor_idx = 0;
-                            paths.cursor_idx = 0;
+                            root.options.history.cursor_idx = 0;
+                            root.options.exec.cursor_idx = 0;
                         }
                     }
                     return true;
@@ -428,7 +398,7 @@ const Root = struct {
         return false;
     }
 
-    const state = enum {
+    const State = enum {
         start,
         new_word,
         word,
@@ -440,7 +410,7 @@ const Root = struct {
         var idx: usize = 0;
         var list: ArrayList(?[*:0]const u8) = .empty;
         if (str.len == 0) return &.{};
-        tkn: switch (state.start) {
+        tkn: switch (State.start) {
             .start => {
                 while (idx < str.len and str[idx] != ' ') idx += 1;
                 try list.append(a, try std.fs.path.joinZ(a, &[2][]const u8{ path, str[start..idx] }));
@@ -492,71 +462,71 @@ const Root = struct {
 
 const CommandBox = struct {
     component: Ui.Component,
-    alloc: Allocator,
     key_buffer: ArrayList(u8) = .empty,
 
-    pub const init = null;
+    pub const new: CommandBox = .{ .component = .{ .vtable = .auto(CommandBox), .children = &.{} } };
+
     pub const raze = null;
     pub const mAxis = null;
     pub const mClick = null;
     pub const mMove = null;
     pub const tick = null;
 
-    pub fn background(_: *Ui.Component, b: *Buffer, root: Box) void {
-        var box = root.add(.xywh(35, 30, -35 * 2, 40 - @as(isize, @intCast(root.h))));
-        b.drawRectangleRoundedFill(ARGB, box, 10, theme.rgb(ARGB, .background));
-        b.drawRectangleRounded(ARGB, box, 10, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        b.drawRectangleRounded(ARGB, box, 9, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        b.drawRectangleRounded(ARGB, box, 8, theme.rgb(ARGB, .primary));
-        box.merge(.vector(1));
-        b.drawRectangleRounded(ARGB, box, 7, theme.rgb(ARGB, .primary));
+    pub fn init(comp: *Ui.Component, _: Box, a: ?Allocator) !void {
+        const cmd: *CommandBox = @fieldParentPtr("component", comp);
+        cmd.key_buffer = try .initCapacity(a.?, 4096);
     }
 
-    pub fn draw(comp: *Ui.Component, buffer: *Buffer, root: Buffer.Box) void {
-        if (!comp.draw_needed) return;
-        const textbox: *CommandBox = @fieldParentPtr("component", comp);
-        var box = root;
-        box = .xywh(35, 30, 600 - 35 * 2, 40);
-        box.merge(.vector(3));
-        buffer.drawRectangleRoundedFill(ARGB, box, 6, theme.rgb(ARGB, .background));
+    pub fn background(_: *Ui.Component, b: *Buffer, box: Box) void {
+        var merge = box.add(.xywh(35, 30, -35 * 2, 40 - @as(isize, @intCast(box.h))));
+        b.drawRectangleRoundedFill(ARGB, merge, 10, theme.rgb(ARGB, .background));
+        b.drawRectangleRounded(ARGB, merge, 10, theme.rgb(ARGB, .primary));
+        merge.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, merge, 9, theme.rgb(ARGB, .primary));
+        merge.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, merge, 8, theme.rgb(ARGB, .primary));
+        merge.merge(.vector(1));
+        b.drawRectangleRounded(ARGB, merge, 7, theme.rgb(ARGB, .primary));
+    }
 
-        if (textbox.key_buffer.items.len > 0) {
+    pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Box) void {
+        defer comp.draw_needed = false;
+        if (!comp.draw_needed) return;
+
+        var merge: Box = .xywh(35, 30, 600 - 35 * 2, 40);
+        merge.merge(.vector(3));
+        buffer.drawRectangleRoundedFill(ARGB, merge, 6, theme.rgb(ARGB, .background));
+
+        const cmd: *CommandBox = @fieldParentPtr("component", comp);
+        if (cmd.key_buffer.items.len > 0) {
             drawing.text(
-                textbox.alloc,
-                &glyph_cache,
                 buffer,
-                ui_key_buffer.items,
-                .xywh(45, 55, root.w - 80, root.h - 80),
+                cmd.key_buffer.items,
+                .xywh(45, 55, box.w - 80, box.h - 80),
                 theme.rgb(ARGB, .text),
             ) catch @panic("draw the textbox failed :<");
         }
-        comp.draw_needed = false;
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        defer comp.draw_needed = true;
+        for (comp.children) |child| _ = child.keyPress(evt);
+
         if (evt.up) return false;
-        const textbox: *CommandBox = @fieldParentPtr("component", comp);
-        comp.draw_needed = true;
+        const cmd: *CommandBox = @fieldParentPtr("component", comp);
         switch (evt.key) {
-            .char => |chr| {
-                comp.draw_needed = true;
-                textbox.key_buffer.appendAssumeCapacity(chr);
-            },
+            .char => |chr| cmd.key_buffer.appendAssumeCapacity(chr),
             .ctrl => |ctrl| switch (ctrl) {
                 .delete_word => {
-                    while (textbox.key_buffer.items.len > 0 and textbox.key_buffer.items[textbox.key_buffer.items.len - 1] == ' ') {
-                        _ = textbox.key_buffer.pop();
+                    while (cmd.key_buffer.items.len > 0 and cmd.key_buffer.items[cmd.key_buffer.items.len - 1] == ' ') {
+                        _ = cmd.key_buffer.pop();
                     }
-                    while (textbox.key_buffer.items.len > 0 and textbox.key_buffer.items[textbox.key_buffer.items.len - 1] != ' ') {
-                        _ = textbox.key_buffer.pop();
+                    while (cmd.key_buffer.items.len > 0 and cmd.key_buffer.items[cmd.key_buffer.items.len - 1] != ' ') {
+                        _ = cmd.key_buffer.pop();
                     }
-                    comp.draw_needed = true;
                 },
                 .backspace => {
-                    comp.draw_needed = true;
-                    _ = textbox.key_buffer.pop();
+                    _ = cmd.key_buffer.pop();
                     return true;
                 },
                 .enter => {},
@@ -569,13 +539,19 @@ const CommandBox = struct {
     }
 };
 
-const Options = struct {
+pub const Options = struct {
     component: Ui.Component,
     history: History,
     exec: Exec,
     kids: [2]*Ui.Component = undefined,
 
-    pub const size: Buffer.Box.Delta = .xywh(35, 70, -70, -75);
+    pub const new: Options = .{
+        .component = .{ .vtable = .auto(Options), .children = &.{} },
+        .history = .{ .component = .{ .vtable = .auto(Options.History), .children = &.{} } },
+        .exec = .{ .component = .{ .vtable = .auto(Options.Exec), .children = &.{} } },
+    };
+
+    pub const size: Box.Delta = .xywh(35, 70, -70, -75);
     pub const option_size = 20;
 
     pub const background = null;
@@ -584,46 +560,44 @@ const Options = struct {
     pub const raze = null;
     pub const tick = null;
 
-    pub fn init(comp: *Ui.Component, _: Buffer.Box, _: ?Allocator) !void {
+    pub fn init(comp: *Ui.Component, b: Box, a: ?Allocator) error{ OutOfMemory, UnableToInit }!void {
         const opt: *Options = @fieldParentPtr("component", comp);
+        opt.* = Options.new;
+
         opt.kids = .{ &opt.history.component, &opt.exec.component };
         comp.children = &opt.kids;
+        opt.exec.history_count = &opt.history.drawn;
+
+        for (comp.children) |c| try c.init(b, a);
     }
 
-    pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-        const opt: *Options = @fieldParentPtr("component", comp);
-        if (!comp.draw_needed)
-            return;
+    pub fn draw(comp: *Ui.Component, buf: *Buffer, box: Box) void {
+        if (!comp.draw_needed) return;
+        defer comp.draw_needed = false;
 
-        const history_box: Buffer.Box = box.add(size);
-        buffer.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
+        const history_box: Box = box.add(size);
+        buf.drawRectangleFill(ARGB, history_box.add(.wh(0, 1)), theme.rgba(ARGB, .background));
 
         const count: usize = (box.h - -size.h) / 20;
-        opt.history.limit = if (ui_key_buffer.items.len > 0) 3 else count;
-        opt.history.component.draw(buffer, history_box);
+        const opt: *Options = @fieldParentPtr("component", comp);
+        const root: *Root = @fieldParentPtr("options", opt);
+        opt.history.limit = if (root.cmd_box.key_buffer.items.len > 0) 3 else count;
+        opt.history.component.draw(buf, history_box);
 
-        const path_box = history_box.add(.xywh(
-            0,
-            @intCast(20 * (opt.history.drawn)),
-            0,
-            -20 * @as(isize, @intCast(opt.history.drawn)),
-        ));
-
-        opt.exec.history_count = opt.history.drawn;
+        const path_box = history_box.add(
+            .xywh(0, @intCast(20 * (opt.history.drawn)), 0, -20 * @as(isize, @intCast(opt.history.drawn))),
+        );
 
         const cursor: usize = @min(@max(opt.history.cursor_idx, opt.exec.cursor_idx), opt.history.drawn + opt.exec.drawn);
         opt.history.cursor_idx = cursor;
         opt.exec.cursor_idx = cursor;
-        opt.exec.component.draw(buffer, path_box);
-        comp.draw_needed = false;
+        opt.exec.component.draw(buf, path_box);
     }
 
     pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
+        defer comp.draw_needed = true;
         const opt: *Options = @fieldParentPtr("component", comp);
-        comp.draw_needed = true;
-        for (comp.children) |c| {
-            _ = c.keyPress(evt);
-        }
+        for (comp.children) |c| _ = c.keyPress(evt);
 
         const cursor: usize = @min(@max(opt.history.cursor_idx, opt.exec.cursor_idx), opt.history.drawn + opt.exec.drawn);
         opt.history.cursor_idx = cursor;
@@ -631,7 +605,7 @@ const Options = struct {
         return true;
     }
 
-    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Buffer.Box) void {
+    pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Box) void {
         const opt: *Options = @fieldParentPtr("component", comp);
         comp.draw_needed = true;
         const cursor_over: usize = ((@as(usize, @intCast(mmove.pos.y)) -| 3) / 20);
@@ -646,9 +620,8 @@ const Options = struct {
 
     const Exec = struct {
         component: Ui.Component,
-        alloc: Allocator,
         cursor_idx: usize = 0,
-        history_count: usize = 0,
+        history_count: *usize = undefined,
         drawn: usize = 0,
         found: usize = 0,
 
@@ -657,28 +630,26 @@ const Options = struct {
         pub const mClick = null;
         pub const mMove = null;
         pub const tick = null;
+        pub const raze = null;
 
-        pub fn init(_: *Ui.Component, _: Buffer.Box, _: ?Allocator) Ui.Component.InitError!void {}
-
-        pub fn raze(_: *Ui.Component, _: ?Allocator) void {
-            //const exec: *Exec = @fieldParentPtr("component", comp);
+        pub fn init(_: *Ui.Component, _: Box, _: ?Allocator) Ui.Component.InitError!void {
+            //std.debug.print("called\n", .{});
         }
 
-        pub fn draw(comp: *Ui.Component, buffer: *Buffer, box: Buffer.Box) void {
-            const exoptions: *Exec = @fieldParentPtr("component", comp);
+        pub fn draw(comp: *Ui.Component, buf: *Buffer, box: Box) void {
+            defer comp.draw_needed = false;
+            const ex: *Exec = @fieldParentPtr("component", comp);
+            const opts: *Options = @fieldParentPtr("exec", ex);
+            const root: *Root = @fieldParentPtr("options", opts);
 
-            const drawn, const found = drawPathlist(
-                exoptions.alloc,
-                buffer,
-                exoptions.cursor_idx -| exoptions.history_count,
-                9 -| exoptions.history_count,
+            ex.drawn, ex.found = drawPathlist(
+                buf,
+                ex.cursor_idx -| ex.history_count.*,
+                9 -| ex.history_count.*,
                 sys_exes.items,
-                ui_key_buffer.items,
+                root.cmd_box.key_buffer.items,
                 box,
             ) catch @panic("drawing failed");
-            exoptions.drawn = drawn;
-            exoptions.found = found;
-            comp.draw_needed = false;
         }
 
         pub fn keyPress(comp: *Ui.Component, evt: Ui.Event.Key) bool {
@@ -707,24 +678,24 @@ const Options = struct {
         }
 
         fn drawPathlist(
-            a: Allocator,
             buf: *Buffer,
             highlighted: usize,
             allowed: usize,
             bins: []const PathExec,
             prefix: []const u8,
-            box: Buffer.Box,
+            box: Box,
         ) !struct { usize, usize } {
-            if (prefix.len == 0 or bins.len == 0) return .{ 0, 0 };
             var drawn: usize = 0;
             var found: usize = 0;
+            if (prefix.len == 0 or bins.len == 0)
+                return .{ drawn, found };
 
             var hl_box = box.add(.xywh(0, 0, 0, 25 - @as(isize, @intCast(box.h))));
             for (bins) |bin| {
                 if (bin.match(prefix)) {
                     found += 1;
                     if (drawn > allowed) continue;
-                    try drawing.text(a, &glyph_cache, buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
+                    try drawing.text(buf, bin.name, hl_box.add(.xy(5, 20)), theme.rgb(ARGB, .tertiary));
                     drawn += 1;
                     if (drawn == highlighted) {
                         buf.drawRectangleRounded(
@@ -788,3 +759,6 @@ const ArrayList = std.ArrayList;
 const mem = std.mem;
 const eql = mem.eql;
 const startsWith = mem.startsWith;
+
+const Theme = @import("Theme.zig");
+const drawing = @import("drawing.zig");
