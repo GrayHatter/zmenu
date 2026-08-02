@@ -297,6 +297,7 @@ fn scanPaths(root_list: *ArrayList(PathExec), paths: []const ?[]const u8, a: All
 
 pub const Root = struct {
     component: Ui.Component = .{ .vtable = .auto(Root), .children = &.{} },
+    tik: usize = 0,
     char: *Charcoal,
     cmd_box: CommandBox = .new,
     options: Options = .new,
@@ -306,7 +307,6 @@ pub const Root = struct {
     pub const mAxis = null;
     pub const mClick = null;
     pub const raze = null;
-    pub const tick = null;
 
     pub fn init(comp: *Ui.Component, box: Box, a: ?Allocator) !void {
         const root: *Root = @fieldParentPtr("component", comp);
@@ -317,6 +317,11 @@ pub const Root = struct {
         comp.children = &root.kids;
 
         for (comp.children) |c| try c.init(box, a);
+    }
+
+    pub fn tick(comp: *Ui.Component, t: usize) void {
+        const root: *Root = @fieldParentPtr("component", comp);
+        root.tik = t;
     }
 
     pub fn draw(comp: *Ui.Component, buf: *Buffer, box: Box) void {
@@ -334,6 +339,7 @@ pub const Root = struct {
     pub fn mMove(comp: *Ui.Component, mmove: Ui.Event.MMove, box: Box) void {
         const root: *Root = @fieldParentPtr("component", comp);
         if (!root.m_enabled) return;
+        if (root.tik < 100) return;
         const options_box = box.add(Options.size);
         if (mmove.withinBox(options_box)) |new| {
             root.options.component.mMove(new, box);
