@@ -520,7 +520,11 @@ pub const Options = struct {
         const count: usize = (box.h - -size.h) / 20;
         const opt: *Options = @fieldParentPtr("component", comp);
         const root: *Root = @fieldParentPtr("options", opt);
-        opt.history.limit = if (root.cmd_box.key_buffer.items.len > 0) 3 else count;
+        if (root.cmd_box.key_buffer.items.len > 0 and findScalar(u8, root.cmd_box.key_buffer.items, ' ') == null) {
+            opt.history.limit = 3;
+        } else {
+            opt.history.limit = count;
+        }
         opt.history.component.draw(buf, history_box);
 
         const path_box = history_box.add(
@@ -581,10 +585,13 @@ pub const Options = struct {
             const opts: *Options = @fieldParentPtr("exec", ex);
             const root: *Root = @fieldParentPtr("options", opts);
 
+            const cursor = ex.cursor_idx -| ex.history_count.*;
+            const req_count = 9 -| ex.history_count.*;
+
             ex.drawn, ex.found = drawPathlist(
                 buf,
-                ex.cursor_idx -| ex.history_count.*,
-                9 -| ex.history_count.*,
+                cursor,
+                req_count,
                 sys_exes.items,
                 root.cmd_box.key_buffer.items,
                 box,
@@ -700,6 +707,7 @@ const Io = std.Io;
 const ArrayList = std.ArrayList;
 const mem = std.mem;
 const eql = mem.eql;
+const findScalar = std.mem.findScalar;
 const startsWith = mem.startsWith;
 
 const Theme = @import("Theme.zig");
